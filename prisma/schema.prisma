@@ -1,0 +1,792 @@
+// This is your Prisma schema file
+// Source of truth for the entire Metro Institute database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  MENTEE
+  SUPER_ADMIN
+}
+
+enum Field {
+  UI_UX
+  FRONTEND
+  BACKEND
+  MOBILE
+}
+
+enum Level {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum BadgeLevel {
+  METRO_ROOKIE
+  METRO_EXPLORER
+  METRO_ACHIEVER
+  METRO_EXPERT
+  METRO_MASTER
+}
+
+enum XpSource {
+  SKILL_TEST_COMPLETE
+  PROFILE_PHOTO_UPLOAD
+  VIDEO_COMPLETE
+  LIVE_ATTEND
+  CHALLENGE_QUIZ_CORRECT
+  ASSIGNMENT_ON_TIME
+  ASSIGNMENT_GRADED
+  STREAK_7
+  STREAK_30
+  STREAK_100
+  MANUAL_GRANT
+}
+
+enum SessionType {
+  VIDEO
+  LIVE
+  ASSIGNMENT
+  QUIZ
+}
+
+enum NotifType {
+  COURSE_ACCESS_EXPIRING
+  BOOTCAMP_ENDING
+  LIVE_REMINDER
+  ASSIGNMENT_GRADED
+  STREAK_MILESTONE
+  BADGE_UPGRADE
+  PURCHASE_SUCCESS
+  SYSTEM_BROADCAST
+}
+
+enum TxStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum ProductType {
+  BOOTCAMP
+  MINI_COURSE
+}
+
+enum CertType {
+  BOOTCAMP
+  MINI_COURSE
+}
+
+enum ChallengeType {
+  QUIZ
+  PROJECT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  MANUAL
+}
+
+// ─────────────────────────────────────────────
+// USERS & AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  phone           String?   @unique
+  passwordHash    String?
+  photoUrl        String?
+  bio             String?
+  status          String?   // Pelajar / Mahasiswa / Karyawan / Freelancer
+  institution     String?
+  role            Role      @default(MENTEE)
+  isEmailVerified Boolean   @default(false)
+  isSuspended     Boolean   @default(false)
+  googleId        String?   @unique
+  selectedField   Field?
+  skillTestDone   Boolean   @default(false)
+  skillTestResult Json?     // { UI_UX: 85, FRONTEND: 60, ... }
+  currentLevel    Level?
+  totalXp         Int       @default(0)
+  currentStreak   Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastActivityAt  DateTime?
+  badgeLevel      BadgeLevel @default(METRO_ROOKIE)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  sessions          UserSession[]
+  emailVerifyTokens EmailVerifyToken[]
+  passwordResetTokens PasswordResetToken[]
+  bootcampEnrollments BootcampEnrollment[]
+  courseEnrollments   CourseEnrollment[]
+  sessionProgress     SessionProgress[]
+  notes               Note[]
+  qnaMessages         QnaMessage[]
+  assignments         Assignment[]
+  xpLogs              XpLog[]
+  notifications       Notification[]
+  certificates        Certificate[]
+  transactions        Transaction[]
+  reviews             Review[]
+  sessionRatings      SessionRating[]
+  wishlistItems       WishlistItem[]
+  leaderboardEntries  LeaderboardSnapshot[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  deviceInfo   String?
+  ipAddress    String?
+  isRevoked    Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model EmailVerifyToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verify_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+// ─────────────────────────────────────────────
+// SKILL TEST
+// ─────────────────────────────────────────────
+
+model SkillTestQuestion {
+  id          String   @id @default(cuid())
+  question    String
+  imageUrl    String?
+  options     Json     // [{ id: "a", text: "..." }, ...]
+  weights     Json     // { UI_UX: 3, FRONTEND: 1, ... }
+  orderIndex  Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("skill_test_questions")
+}
+
+// ─────────────────────────────────────────────
+// BOOTCAMP
+// ─────────────────────────────────────────────
+
+enum BatchStatus {
+  OPEN
+  ONGOING
+  CLOSED
+  COMING_SOON
+}
+
+model Bootcamp {
+  id                   String      @id @default(cuid())
+  title                String
+  shortDescription     String      @default("")
+  description          String
+  field                Field
+  level                Level       @default(BEGINNER)
+  price                Int         // in IDR (Rupiah)
+  thumbnailUrl         String?
+  quota                Int         @default(50)
+  totalDuration        Int         @default(0) // seconds
+  tags                 String[]
+  outcomes             String[]    // "Yang akan kamu pelajari"
+  batchStatus          BatchStatus @default(COMING_SOON)
+  registrationDeadline DateTime?
+  batchStartDate       DateTime?
+  batchEndDate         DateTime?
+  mentorName           String?
+  mentorPhotoUrl       String?
+  mentorBio            String?
+  isPublished          Boolean     @default(false)
+  isFeatured           Boolean     @default(false)
+  rating               Float       @default(0)
+  reviewCount          Int         @default(0)
+  enrollmentCount      Int         @default(0)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  chapters      BootcampChapter[]
+  enrollments   BootcampEnrollment[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+  transactions  Transaction[]
+
+  @@map("bootcamps")
+}
+
+model BootcampChapter {
+  id          String   @id @default(cuid())
+  bootcampId  String
+  title       String
+  orderIndex  Int
+  createdAt   DateTime @default(now())
+
+  bootcamp Bootcamp @relation(fields: [bootcampId], references: [id], onDelete: Cascade)
+  sessions BootcampSession[]
+
+  @@map("bootcamp_chapters")
+}
+
+
+model BootcampSession {
+  id              String      @id @default(cuid())
+  chapterId       String
+  title           String
+  type            SessionType
+  videoUrl        String?
+  videoDuration   Int?        // seconds
+  liveUrl         String?
+  liveScheduledAt DateTime?
+  attendanceWindowMin Int?    // minutes — admin configures per session
+  materials       Json?       // [{ name: string, url: string }]
+  assignmentDescription String?
+  assignmentDeadline    DateTime?
+  quizOptions     Json?       // [{ id, text, isCorrect, explanation }]
+  isFreePreview   Boolean     @default(false)
+  orderIndex      Int
+  xpReward        Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  chapter       BootcampChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  progress      SessionProgress[]
+  assignments   Assignment[]
+  attendances   LiveAttendance[]
+  sessionRatings SessionRating[]
+  qnaMessages   QnaMessage[]
+
+  @@map("bootcamp_sessions")
+}
+
+model BootcampEnrollment {
+  id           String   @id @default(cuid())
+  userId       String
+  bootcampId   String
+  field        Field
+  progress     Float    @default(0) // percentage 0-100
+  isActive     Boolean  @default(true)
+  removedAt    DateTime?
+  removedReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcamp Bootcamp @relation(fields: [bootcampId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bootcampId])
+  @@map("bootcamp_enrollments")
+}
+
+model LiveAttendance {
+  id              String           @id @default(cuid())
+  sessionId       String
+  userId          String
+  status          AttendanceStatus @default(PRESENT)
+  attendedAt      DateTime         @default(now())
+  markedByAdmin   Boolean          @default(false)
+
+  session BootcampSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, userId])
+  @@map("live_attendances")
+}
+
+// ─────────────────────────────────────────────
+// MINI COURSE
+// ─────────────────────────────────────────────
+
+model MiniCourse {
+  id               String   @id @default(cuid())
+  title            String
+  shortDescription String
+  description      String
+  field            Field
+  level            Level
+  price            Int      // in IDR
+  thumbnailUrl     String?
+  totalDuration    Int      @default(0) // seconds
+  accessDays       Int      @default(90) // days after purchase
+  isPublished      Boolean  @default(false)
+  isFeatured       Boolean  @default(false)
+  rating           Float    @default(0)
+  reviewCount      Int      @default(0)
+  enrollmentCount  Int      @default(0)
+  tags             String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  chapters      CourseChapter[]
+  enrollments   CourseEnrollment[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+  transactions  Transaction[]
+
+  @@map("mini_courses")
+}
+
+model CourseChapter {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  orderIndex  Int
+  createdAt   DateTime @default(now())
+
+  course   MiniCourse      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sessions CourseSession[]
+
+  @@map("course_chapters")
+}
+
+model CourseSession {
+  id              String      @id @default(cuid())
+  chapterId       String
+  title           String
+  type            SessionType
+  videoUrl        String?
+  videoDuration   Int?        // seconds
+  materials       Json?       // [{ name, url }]
+  assignmentDescription String?
+  assignmentDeadline    DateTime?
+  quizOptions     Json?
+  isFreePreview   Boolean     @default(false)
+  orderIndex      Int
+  xpReward        Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  chapter        CourseChapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  progress       SessionProgress[]
+  assignments    Assignment[]
+  sessionRatings SessionRating[]
+  qnaMessages    QnaMessage[]
+
+  @@map("course_sessions")
+}
+
+model CourseEnrollment {
+  id           String    @id @default(cuid())
+  userId       String
+  courseId     String
+  accessUntil  DateTime
+  progress     Float     @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course MiniCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("course_enrollments")
+}
+
+// ─────────────────────────────────────────────
+// LEARNING
+// ─────────────────────────────────────────────
+
+model SessionProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  bootcampSessionId String?
+  courseSessionId   String?
+  watchedSeconds  Int      @default(0)
+  isCompleted     Boolean  @default(false)
+  completedAt     DateTime?
+  updatedAt       DateTime @updatedAt
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcampSession  BootcampSession? @relation(fields: [bootcampSessionId], references: [id])
+  courseSession    CourseSession?   @relation(fields: [courseSessionId], references: [id])
+
+  @@unique([userId, bootcampSessionId])
+  @@unique([userId, courseSessionId])
+  @@map("session_progress")
+}
+
+model Note {
+  id              String   @id @default(cuid())
+  userId          String
+  bootcampSessionId String?
+  courseSessionId   String?
+  content         String
+  timestampSec    Int?     // video timestamp in seconds
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+model QnaMessage {
+  id              String   @id @default(cuid())
+  userId          String
+  bootcampSessionId String?
+  courseSessionId   String?
+  content         String
+  parentId        String?  // for replies
+  createdAt       DateTime @default(now())
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcampSession  BootcampSession? @relation(fields: [bootcampSessionId], references: [id])
+  courseSession    CourseSession?   @relation(fields: [courseSessionId], references: [id])
+
+  @@map("qna_messages")
+}
+
+model Assignment {
+  id              String   @id @default(cuid())
+  userId          String
+  bootcampSessionId String?
+  courseSessionId   String?
+  fileUrl         String?
+  linkUrl         String?
+  description     String?
+  score           Int?     // 0-100
+  feedback        String?
+  xpAwarded       Int?
+  submittedAt     DateTime @default(now())
+  gradedAt        DateTime?
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcampSession BootcampSession? @relation(fields: [bootcampSessionId], references: [id])
+  courseSession   CourseSession?   @relation(fields: [courseSessionId], references: [id])
+
+  @@map("assignments")
+}
+
+// ─────────────────────────────────────────────
+// CHALLENGE BANK
+// ─────────────────────────────────────────────
+
+model Challenge {
+  id           String        @id @default(cuid())
+  title        String
+  description  String
+  type         ChallengeType
+  field        Field
+  level        Level
+  timeLimitSec Int?          // null = no time limit
+  xpReward     Int
+  options      Json?         // for QUIZ: [{ id, text, isCorrect, explanation }]
+  tags         String[]
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  attempts ChallengeAttempt[]
+
+  @@map("challenges")
+}
+
+model ChallengeAttempt {
+  id          String   @id @default(cuid())
+  userId      String
+  challengeId String
+  isCorrect   Boolean?
+  answer      String?
+  fileUrl     String?
+  linkUrl     String?
+  xpAwarded   Int?
+  canRetryAt  DateTime? // cooldown 24h for wrong QUIZ
+  submittedAt DateTime  @default(now())
+  gradedAt    DateTime?
+
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+
+  @@map("challenge_attempts")
+}
+
+// ─────────────────────────────────────────────
+// XP & GAMIFIKASI
+// ─────────────────────────────────────────────
+
+model XpLog {
+  id        String    @id @default(cuid())
+  userId    String
+  source    XpSource
+  amount    Int
+  note      String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("xp_logs")
+}
+
+model XpConfig {
+  id      String   @id @default(cuid())
+  source  XpSource @unique
+  amount  Int
+  updatedAt DateTime @updatedAt
+
+  @@map("xp_configs")
+}
+
+model BadgeConfig {
+  id        String     @id @default(cuid())
+  level     BadgeLevel @unique
+  minXp     Int
+  updatedAt DateTime   @updatedAt
+
+  @@map("badge_configs")
+}
+
+model LeaderboardSnapshot {
+  id        String   @id @default(cuid())
+  userId    String
+  totalXp   Int
+  rank      Int
+  period    String   // "all-time" | "2026-09" | "2026-W38"
+  field     Field?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("leaderboard_snapshots")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      NotifType
+  title     String
+  body      String
+  isRead    Boolean   @default(false)
+  data      Json?     // extra context (courseId, bootcampId, etc)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String @id @default(cuid())
+  userId    String @unique
+  emailEnabled  Json @default("{}") // { LIVE_REMINDER: true, ... }
+  inAppEnabled  Json @default("{}")
+
+  @@map("notification_preferences")
+}
+
+// ─────────────────────────────────────────────
+// CERTIFICATES
+// ─────────────────────────────────────────────
+
+model Certificate {
+  id           String   @id @default(cuid())
+  userId       String
+  productType  CertType
+  bootcampId   String?
+  courseId     String?
+  credentialId String   @unique // "METRO-2026-XXXXXX"
+  pdfUrl       String?          // generated on-demand
+  issuedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+model CertificateConfig {
+  id              String  @id @default(cuid())
+  productType     CertType @unique
+  minProgressPct  Float   @default(100)
+  minAssignScore  Int     @default(70)
+  minAttendancePct Float? // only for bootcamp
+  minXp           Int     @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@map("certificate_configs")
+}
+
+// ─────────────────────────────────────────────
+// TRANSACTIONS & PAYMENT
+// ─────────────────────────────────────────────
+
+model Transaction {
+  id            String      @id @default(cuid())
+  userId        String
+  orderId       String      @unique   // "METRO-<timestamp>-<userId>"
+  productType   ProductType
+  bootcampId    String?
+  courseId      String?
+  title         String      @default("") // product title for display
+  voucherId     String?
+  amount        Int                  // final amount in IDR
+  discountAmount Int        @default(0)
+  status        TxStatus    @default(PENDING)
+  snapToken     String?              // Midtrans Snap token
+  paidAt        DateTime?
+  refundedAt    DateTime?
+  refundReason  String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcamp  Bootcamp?   @relation(fields: [bootcampId], references: [id])
+  course    MiniCourse? @relation(fields: [courseId], references: [id])
+  voucher   Voucher?    @relation(fields: [voucherId], references: [id])
+
+  @@map("transactions")
+}
+
+model Voucher {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  type           String   // "PERCENT" | "FIXED"
+  value          Int      // percent or rupiah
+  maxUsage       Int
+  maxPerUser     Int      @default(1)
+  usageCount     Int      @default(0)
+  validFrom      DateTime
+  validUntil     DateTime
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  transactions Transaction[]
+
+  @@map("vouchers")
+}
+
+// ─────────────────────────────────────────────
+// REVIEWS & RATINGS
+// ─────────────────────────────────────────────
+
+model Review {
+  id          String   @id @default(cuid())
+  userId      String
+  productType ProductType
+  bootcampId  String?
+  courseId    String?
+  rating      Int      // 1-5
+  content     String?
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcamp Bootcamp?   @relation(fields: [bootcampId], references: [id])
+  course   MiniCourse? @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, bootcampId])
+  @@unique([userId, courseId])
+  @@map("reviews")
+}
+
+model SessionRating {
+  id              String   @id @default(cuid())
+  userId          String
+  bootcampSessionId String?
+  courseSessionId   String?
+  qualityRating   Int      // 1-5
+  clarityRating   Int      // 1-5
+  relevanceRating Int      // 1-5
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcampSession BootcampSession? @relation(fields: [bootcampSessionId], references: [id])
+  courseSession   CourseSession?   @relation(fields: [courseSessionId], references: [id])
+
+  @@unique([userId, bootcampSessionId])
+  @@unique([userId, courseSessionId])
+  @@map("session_ratings")
+}
+
+// ─────────────────────────────────────────────
+// WISHLIST
+// ─────────────────────────────────────────────
+
+model WishlistItem {
+  id          String      @id @default(cuid())
+  userId      String
+  productType ProductType
+  bootcampId  String?
+  courseId    String?
+  createdAt   DateTime    @default(now())
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bootcamp Bootcamp?   @relation(fields: [bootcampId], references: [id])
+  course   MiniCourse? @relation(fields: [courseId], references: [id])
+
+  @@map("wishlist_items")
+}
+
+// ─────────────────────────────────────────────
+// LEAD GENERATION
+// ─────────────────────────────────────────────
+
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  source    String?  // "landing_page", "bootcamp_page", etc.
+  createdAt DateTime @default(now())
+
+  @@map("leads")
+}
+
+// ─────────────────────────────────────────────
+// HOMEPAGE CONFIG
+// ─────────────────────────────────────────────
+
+model HomepageConfig {
+  id           String   @id @default(cuid())
+  key          String   @unique // "HERO_BANNER", "EBOOK_URL", "EBOOK_TITLE", "DISCORD_LINK"
+  value        String
+  updatedAt    DateTime @updatedAt
+
+  @@map("homepage_configs")
+}
