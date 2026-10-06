@@ -6,6 +6,7 @@ import { prisma } from '../utils/prisma'
 import { createError } from '../middleware/errorHandler'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { sendEmail } from '../utils/email'
+import { WhatsAppService } from '../services/whatsapp.service'
 import crypto from 'crypto'
 
 export const authRouter = Router()
@@ -59,26 +60,25 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
       data: { ...data, passwordHash, password: undefined } as unknown as Parameters<typeof prisma.user.create>[0]['data'],
     })
 
-    // Send verification email
-    const verifyToken = crypto.randomBytes(32).toString('hex')
-    await prisma.emailVerifyToken.create({
+    // Kirim OTP verifikasi email (6-digit)
+    const verifyOtp = Math.floor(100000 + Math.random() * 900000).toString()
+    await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'EMAIL_VERIFICATION' } })
+    await prisma.otpCode.create({
       data: {
         userId: user.id,
-        token: verifyToken,
+        code: verifyOtp,
+        purpose: 'EMAIL_VERIFICATION',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     })
-    const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verifyToken}`
     await sendEmail({
       to: user.email,
-      subject: '✅ Verifikasi Email Metro Institute',
+      subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
       html: `
         <h2>Hei, ${user.name}! 👋</h2>
-        <p>Klik tombol di bawah untuk verifikasi emailmu:</p>
-        <a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#018556;color:white;border-radius:8px;text-decoration:none;font-weight:bold">
-          Verifikasi Email
-        </a>
-        <p>Link berlaku 24 jam. Jika kamu tidak mendaftar, abaikan email ini.</p>
+        <p>Masukkan kode OTP berikut di aplikasi untuk memverifikasi email kamu:</p>
+        <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f0fdf4;padding:16px 24px;border-radius:8px;display:inline-block;color:#018556">${verifyOtp}</div>
+        <p>Kode berlaku 24 jam. Jika kamu tidak mendaftar, abaikan email ini.</p>
       `,
     })
 
@@ -172,18 +172,21 @@ authRouter.post('/logout', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err) }
 })
 
-// ── GET /auth/verify-email ─────────────────────────────────
-authRouter.get('/verify-email', async (req: Request, res: Response, next: NextFunction) => {
+// ── POST /auth/verify-email ────────────────────────────────
+authRouter.post('/verify-email', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = z.string().min(1).parse((req.query as Record<string, string>).token)
+    const { email, code } = z.object({ email: z.string().email(), code: z.string().length(6) }).parse(req.body)
 
-    const record = await prisma.emailVerifyToken.findUnique({ where: { token } })
-    if (!record || record.expiresAt < new Date()) {
-      throw createError(400, 'Link verifikasi tidak valid atau sudah kedaluwarsa')
-    }
+    const user = await prisma.user.findUnique({ where: { email } })
+    if (!user) throw createError(404, 'User tidak ditemukan')
 
-    await prisma.user.update({ where: { id: record.userId }, data: { isEmailVerified: true } })
-    await prisma.emailVerifyToken.delete({ where: { token } })
+    const record = await prisma.otpCode.findFirst({
+      where: { userId: user.id, code, purpose: 'EMAIL_VERIFICATION', expiresAt: { gt: new Date() } }
+    })
+    if (!record) throw createError(400, 'Kode OTP salah atau sudah kedaluwarsa')
+
+    await prisma.user.update({ where: { id: user.id }, data: { isEmailVerified: true } })
+    await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'EMAIL_VERIFICATION' } })
 
     res.json({ success: true, message: 'Email berhasil diverifikasi' })
   } catch (err) { next(err) }
@@ -195,23 +198,22 @@ authRouter.post('/resend-verify', async (req: Request, res: Response, next: Next
     const { email } = z.object({ email: z.string().email() }).parse(req.body)
     const user = await prisma.user.findUnique({ where: { email } })
     if (!user || user.isEmailVerified) {
-      return res.json({ success: true, message: 'Jika email terdaftar, link verifikasi akan dikirim' })
+      return res.json({ success: true, message: 'Jika email terdaftar, kode OTP verifikasi akan dikirim' })
     }
 
-    await prisma.emailVerifyToken.deleteMany({ where: { userId: user.id } })
-    const token = crypto.randomBytes(32).toString('hex')
-    await prisma.emailVerifyToken.create({
-      data: { userId: user.id, token, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    const newOtp = Math.floor(100000 + Math.random() * 900000).toString()
+    await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'EMAIL_VERIFICATION' } })
+    await prisma.otpCode.create({
+      data: { userId: user.id, code: newOtp, purpose: 'EMAIL_VERIFICATION', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     })
 
-    const url = `${process.env.FRONTEND_URL}/verify-email?token=${token}`
     await sendEmail({
       to: email,
-      subject: '✅ Verifikasi Email Metro Institute',
-      html: `<a href="${url}">Klik di sini untuk verifikasi email</a>`,
+      subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
+      html: `<p>Kode OTP verifikasi email kamu: <strong style="font-size:24px;letter-spacing:4px">${newOtp}</strong></p><p>Berlaku 24 jam.</p>`,
     })
 
-    res.json({ success: true, message: 'Link verifikasi baru telah dikirim' })
+    res.json({ success: true, message: 'Kode OTP verifikasi baru telah dikirim' })
   } catch (err) { next(err) }
 })
 
@@ -223,25 +225,24 @@ authRouter.post('/forgot-password', async (req: Request, res: Response, next: Ne
 
     // Always respond same to prevent email enumeration
     if (user) {
-      await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } })
-      const token = crypto.randomBytes(32).toString('hex')
-      await prisma.passwordResetToken.create({
-        data: { userId: user.id, token, expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+      const otp = Math.floor(100000 + Math.random() * 900000).toString()
+      await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'PASSWORD_RESET' } })
+      await prisma.otpCode.create({
+        data: { userId: user.id, code: otp, purpose: 'PASSWORD_RESET', expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
       })
-      const url = `${process.env.FRONTEND_URL}/reset-password?token=${token}`
       await sendEmail({
         to: email,
-        subject: '🔐 Reset Password Metro Institute',
+        subject: '🔐 Kode OTP Reset Password - Metro Institute',
         html: `
           <h2>Reset Password</h2>
-          <p>Klik tombol berikut untuk mereset password akun Metro Institute kamu:</p>
-          <a href="${url}" style="display:inline-block;padding:12px 24px;background:#018556;color:white;border-radius:8px;text-decoration:none">Reset Password</a>
-          <p>Link berlaku 1 jam. Jika kamu tidak meminta reset password, abaikan email ini.</p>
+          <p>Masukkan kode OTP berikut di aplikasi untuk mereset password kamu:</p>
+          <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f0fdf4;padding:16px 24px;border-radius:8px;display:inline-block;color:#018556">${otp}</div>
+          <p>Kode berlaku 1 jam. Jika kamu tidak meminta reset password, abaikan email ini.</p>
         `,
       })
     }
 
-    res.json({ success: true, message: 'Jika email terdaftar, instruksi reset password telah dikirim' })
+    res.json({ success: true, message: 'Jika email terdaftar, kode OTP reset password telah dikirim' })
   } catch (err) { next(err) }
 })
 
@@ -249,21 +250,24 @@ authRouter.post('/forgot-password', async (req: Request, res: Response, next: Ne
 authRouter.post('/reset-password', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const schema = z.object({
-      token: z.string().min(1),
+      email: z.string().email(),
+      code: z.string().length(6),
       password: z.string().min(8).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/),
     })
-    const { token, password } = schema.parse(req.body)
+    const { email, code, password } = schema.parse(req.body)
 
-    const record = await prisma.passwordResetToken.findUnique({ where: { token } })
-    if (!record || record.expiresAt < new Date()) {
-      throw createError(400, 'Link reset password tidak valid atau sudah kedaluwarsa')
-    }
+    const user = await prisma.user.findUnique({ where: { email } })
+    if (!user) throw createError(404, 'User tidak ditemukan')
+
+    const record = await prisma.otpCode.findFirst({
+      where: { userId: user.id, code, purpose: 'PASSWORD_RESET', expiresAt: { gt: new Date() } }
+    })
+    if (!record) throw createError(400, 'Kode OTP salah atau sudah kedaluwarsa')
 
     const passwordHash = await bcrypt.hash(password, 12)
-    await prisma.user.update({ where: { id: record.userId }, data: { passwordHash } })
-    await prisma.passwordResetToken.delete({ where: { token } })
-    // Revoke all sessions
-    await prisma.userSession.updateMany({ where: { userId: record.userId }, data: { isRevoked: true } })
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } })
+    await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'PASSWORD_RESET' } })
+    await prisma.userSession.updateMany({ where: { userId: user.id }, data: { isRevoked: true } })
 
     res.json({ success: true, message: 'Password berhasil direset. Silakan login kembali.' })
   } catch (err) { next(err) }
@@ -453,7 +457,7 @@ authRouter.post('/google/mobile', async (req, res, next) => {
     if (!idToken) throw createError(400, 'ID Token Google wajib dikirim');
 
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-    const profile = await googleRes.json();
+    const profile = await googleRes.json() as { email?: string; sub?: string; name?: string; picture?: string };
 
     if (!googleRes.ok || !profile.email) {
       throw createError(401, 'ID Token Google tidak valid atau kedaluwarsa');
@@ -518,7 +522,6 @@ authRouter.post('/google/mobile', async (req, res, next) => {
 });
 
 // ── POST /auth/request-otp ────────────────────────────────
-import { WhatsAppService } from '../services/whatsapp.service';
 
 authRouter.post('/request-otp', async (req, res, next) => {
   try {

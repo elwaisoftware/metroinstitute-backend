@@ -20,7 +20,8 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
     const userId = req.user!.id
 
     const where: Record<string, unknown> = {}
-    if (req.user?.role !== 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+    const isAdmin = req.user?.role === 'SUPER_ADMIN'
+    if (!isAdmin) {
       where.isActive = true
     }
     if (field) where.field = field

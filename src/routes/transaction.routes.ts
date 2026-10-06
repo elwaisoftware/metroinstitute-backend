@@ -64,7 +64,7 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
     })
 
     // Create Midtrans Snap token
-    const snapResponse = await snap.createTransaction({
+    const snapPayload: Record<string, unknown> = {
       transaction_details: { order_id: orderId, gross_amount: price },
       customer_details: { first_name: user.name, email: user.email },
       item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
@@ -73,7 +73,8 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
         error: `${process.env.FRONTEND_URL}/checkout/failed?order_id=${orderId}`,
         pending: `${process.env.FRONTEND_URL}/transactions`,
       },
-    })
+    }
+    const snapResponse = await snap.createTransaction(snapPayload as any)
 
     await prisma.transaction.update({
       where: { id: transaction.id },

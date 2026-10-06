@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
+import { WhatsAppService } from '../services/whatsapp.service'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
@@ -829,9 +830,7 @@ adminRouter.patch('/password', async (req: AuthRequest, res: Response, next: Nex
 })
 
 // ── POST /admin/broadcast-wa ──────────────────────────────
-import { WhatsAppService } from '../services/whatsapp.service';
-
-adminRouter.post('/broadcast-wa', requireAdmin, async (req, res, next) => {
+adminRouter.post('/broadcast-wa', async (req, res, next) => {
   try {
     const { message, targetRole } = req.body;
     if (!message) throw createError(400, 'Pesan broadcast tidak boleh kosong');

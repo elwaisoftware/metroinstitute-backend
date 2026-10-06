@@ -15,7 +15,8 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
     const { search, field, level, sort = 'newest', status } = req.query as Record<string, string>
 
     const where: Record<string, unknown> = {}
-    if (req.user?.role !== 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+    const isAdmin = req.user?.role === 'SUPER_ADMIN'
+    if (!isAdmin) {
       where.isPublished = true
     } else if (status) {
       where.isPublished = status === 'PUBLISHED'
