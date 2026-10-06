@@ -205,7 +205,7 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
 userRouter.get('/profile/:userId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.params.userId },
+      where: { id: (req.params as Record<string, string>).userId },
       select: {
         id: true, name: true, photoUrl: true, bio: true,
         status: true, institution: true, totalXp: true,
@@ -226,14 +226,20 @@ userRouter.get('/profile/:userId', async (req: AuthRequest, res: Response, next:
 userRouter.get('/me/xp-logs', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id
-    const page  = Number(req.query.page)  || 1
-    const limit = Number(req.query.limit) || 20
-    const skip  = (page - 1) * limit
+    const page   = Number((req.query as Record<string, string>).page)  || 1
+    const limit  = Number((req.query as Record<string, string>).limit) || 20
+    const skip   = (page - 1) * limit
+    const source = (req.query as Record<string, string>).source as string | undefined
+    const search = (req.query as Record<string, string>).search as string | undefined
+
+    const where: any = { userId }
+    if (source) where.source = source
+    if (search) where.note = { contains: search, mode: 'insensitive' }
 
     const [total, logs, user] = await Promise.all([
-      prisma.xpLog.count({ where: { userId } }),
+      prisma.xpLog.count({ where }),
       prisma.xpLog.findMany({
-        where:   { userId },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,

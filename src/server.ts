@@ -22,6 +22,7 @@ import { webhookRouter } from './routes/webhook.routes'
 import { homepageRouter } from './routes/homepage.routes'
 import { leadRouter } from './routes/lead.routes'
 import { adminRouter } from './routes/admin.routes'
+import { voucherRouter } from './routes/voucher.routes'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -30,6 +31,7 @@ const PORT = process.env.PORT || 5000
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
 }))
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -57,10 +59,14 @@ app.use(globalLimit)
 
 // ── Body Parsing ───────────────────────────────────────────
 // Webhook needs raw body BEFORE json parser
+import path from 'path'
 app.use('/api/v1/webhook', express.raw({ type: 'application/json' }))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
+
+// ── Static Files ───────────────────────────────────────────
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
 // ── Request Logging ────────────────────────────────────────
 app.use((req, _res, next) => {
@@ -92,6 +98,7 @@ app.use(`${PREFIX}/webhook`, webhookRouter)
 app.use(`${PREFIX}/homepage`, homepageRouter)
 app.use(`${PREFIX}/leads`, leadRouter)
 app.use(`${PREFIX}/admin`, adminRouter)
+app.use(`${PREFIX}/voucher`, voucherRouter)
 
 // ── 404 ────────────────────────────────────────────────────
 app.use((req: import('express').Request, res: import('express').Response) => {
@@ -103,8 +110,8 @@ app.use(errorHandler)
 
 // ── Start ──────────────────────────────────────────────────
 app.listen(PORT, () => {
-  logger.info(`🚀 Metro Institute Backend berjalan di http://localhost:${PORT}`)
-  logger.info(`📊 Environment: ${process.env.NODE_ENV}`)
+  logger.info(`Metro Institute Backend berjalan di http://localhost:${PORT}`)
+  logger.info(`Environment: ${process.env.NODE_ENV}`)
 })
 
 export default app

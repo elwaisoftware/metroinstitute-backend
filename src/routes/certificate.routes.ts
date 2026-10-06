@@ -12,12 +12,23 @@ certificateRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
     const certificates = await prisma.certificate.findMany({
       where: { userId: req.user!.id },
       orderBy: { issuedAt: 'desc' },
-      include: {
-        course: { select: { title: true, field: true, thumbnailUrl: true } },
-        bootcamp: { select: { title: true, field: true, thumbnailUrl: true } },
-      },
     })
-    res.json({ success: true, data: certificates })
+
+    const data = await Promise.all(
+      certificates.map(async (c) => {
+        let course = null
+        let bootcamp = null
+        if (c.courseId) {
+          course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true } })
+        }
+        if (c.bootcampId) {
+          bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true } })
+        }
+        return { ...c, course, bootcamp }
+      })
+    )
+
+    res.json({ success: true, data })
   } catch (err) { next(err) }
 })
 
@@ -25,14 +36,22 @@ certificateRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
 certificateRouter.get('/verify/:credentialId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const cert = await prisma.certificate.findUnique({
-      where: { credentialId: req.params.credentialId },
+      where: { credentialId: (req.params as Record<string, string>).credentialId },
       include: {
         user: { select: { name: true } },
-        course: { select: { title: true, field: true } },
-        bootcamp: { select: { title: true, field: true } },
       },
     })
     if (!cert) throw createError(404, 'Sertifikat tidak ditemukan atau tidak valid')
-    res.json({ success: true, data: cert, valid: true })
+
+    let course = null
+    let bootcamp = null
+    if (cert.courseId) {
+      course = await prisma.miniCourse.findUnique({ where: { id: cert.courseId }, select: { title: true, field: true } })
+    }
+    if (cert.bootcampId) {
+      bootcamp = await prisma.bootcamp.findUnique({ where: { id: cert.bootcampId }, select: { title: true, field: true } })
+    }
+
+    res.json({ success: true, data: { ...cert, course, bootcamp }, valid: true })
   } catch (err) { next(err) }
 })

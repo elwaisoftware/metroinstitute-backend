@@ -22,6 +22,22 @@ async function main() {
     console.log('✅ Super Admin created')
   }
 
+  // ── Mentee Account ────────────────────────────────────────────
+  const menteeExists = await prisma.user.findFirst({ where: { email: 'mentee@metroinstitute.id' } })
+  if (!menteeExists) {
+    await prisma.user.create({
+      data: {
+        name: 'Mentee Teladan',
+        email: 'mentee@metroinstitute.id',
+        passwordHash: await bcrypt.hash('Mentee2026!', 12),
+        role: 'MENTEE',
+        isEmailVerified: true,
+        phone: '082000000002',
+      }
+    })
+    console.log('✅ Default Mentee created')
+  }
+
   // ── XP Config ─────────────────────────────────────────────────
   const xpConfigs = [
     { source: XpSource.SKILL_TEST_COMPLETE, amount: 50 },

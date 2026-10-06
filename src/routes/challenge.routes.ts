@@ -16,12 +16,17 @@ const PASSING_SCORE  = 70  // % minimum to pass
 // Returns all active challenges enriched with user's attempt status
 challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { field, level } = req.query
+    const { field, level, search, type } = req.query as Record<string, string>
     const userId = req.user!.id
 
-    const where: Record<string, unknown> = { isActive: true }
+    const where: Record<string, unknown> = {}
+    if (req.user?.role !== 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      where.isActive = true
+    }
     if (field) where.field = field
     if (level)  where.level  = level
+    if (type)   where.type   = type
+    if (search) where.title  = { contains: String(search), mode: 'insensitive' }
 
     const challenges = await prisma.challenge.findMany({
       where,
@@ -72,7 +77,7 @@ challengeRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFu
   try {
     const userId = req.user!.id
     const challenge = await prisma.challenge.findUnique({
-      where: { id: req.params.id, isActive: true },
+      where: { id: (req.params as Record<string, string>).id, isActive: true },
     })
     if (!challenge) throw createError(404, 'Challenge tidak ditemukan')
 
@@ -88,31 +93,48 @@ challengeRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFu
     }
 
     // Build questions from options JSON — strip isCorrect before sending
-    const options = (challenge.options as Array<{
-      id: string; text: string; isCorrect: boolean; explanation?: string
-    }> | null) ?? []
-
-    // Present as single question (quiz type) — the options JSON IS the question
-    // Format: { id, title, type, field, level, xpReward, questions: [{ id, question, options }] }
-    const sanitized = {
-      id: challenge.id,
-      title: challenge.title,
-      description: challenge.description,
-      type: challenge.type,
-      field: challenge.field,
-      level: challenge.level,
-      xpReward: challenge.xpReward,
-      timeLimitSec: challenge.timeLimitSec,
-      passingScore: PASSING_SCORE,
-      // Expose as a single "question" for uniform quiz UI
-      questions: [{
-        id: challenge.id,          // use challengeId as questionId for single-question challenges
-        question: challenge.title,
-        options: options.map(({ id, text }) => ({ id, text })), // strip isCorrect
-      }],
+    let parsedOptions = challenge.options;
+    if (typeof parsedOptions === 'string') {
+      try {
+        parsedOptions = JSON.parse(parsedOptions);
+      } catch (e) {
+        parsedOptions = [];
+      }
+    }
+    const storedQuestions = Array.isArray(parsedOptions) ? parsedOptions : [];
+    let questions: any[] = []
+    
+    if (storedQuestions.length > 0 && typeof storedQuestions[0] === 'object' && storedQuestions[0] !== null && 'question' in (storedQuestions[0] as any)) {
+      // Multi-question format
+      questions = storedQuestions.map((q: any) => ({
+        id: q.id || challenge.id,
+        question: q.question,
+        imageUrl: q.imageUrl,
+        options: (q.options || []).map((o: any) => ({ id: o.id, text: o.text }))
+      }))
+    } else if (storedQuestions.length > 0) {
+      // Single-question format
+      questions = [{
+        id: challenge.id,
+        question: challenge.description,
+        options: storedQuestions.map((o: any) => ({ id: o.id, text: o.text }))
+      }]
     }
 
-    res.json({ success: true, data: sanitized })
+    res.json({
+      success: true,
+      data: {
+        id: challenge.id,
+        title: challenge.title,
+        description: challenge.description,
+        type: challenge.type,
+        field: challenge.field,
+        level: challenge.level,
+        xpReward: challenge.xpReward,
+        passingScore: 70, // or however it's configured
+        questions
+      }
+    })
   } catch (err) { next(err) }
 })
 
@@ -120,70 +142,94 @@ challengeRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFu
 challengeRouter.post('/:id/submit', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id
-    const challengeId = req.params.id
-
-    const { answers } = z.object({
-      answers: z.record(z.string(), z.string()),
-    }).parse(req.body)
+    const challengeId = (req.params as Record<string, string>).id
+    const { answers } = req.body // { questionId: optionId }
 
     const challenge = await prisma.challenge.findUnique({
       where: { id: challengeId, isActive: true },
     })
     if (!challenge) throw createError(404, 'Challenge tidak ditemukan')
 
-    // Cooldown check
-    const lastAttempt = await prisma.challengeAttempt.findFirst({
-      where: { userId, challengeId },
-      orderBy: { submittedAt: 'desc' },
-    })
-    if (lastAttempt?.canRetryAt && lastAttempt.canRetryAt > new Date()) {
-      const h = Math.ceil((lastAttempt.canRetryAt.getTime() - Date.now()) / (1000 * 60 * 60))
-      throw createError(429, `Challenge masih dalam cooldown. Coba lagi dalam ${h} jam.`)
+    // ── IF QUIZ ──────────────────────────────────────────────────────────
+    if (challenge.type === 'QUIZ') {
+      let parsedOptions = challenge.options;
+      if (typeof parsedOptions === 'string') {
+        try { parsedOptions = JSON.parse(parsedOptions); } catch (e) { parsedOptions = []; }
+      }
+      const storedQuestions = (parsedOptions as Array<any> | null) ?? []
+      let totalQuestions = 0
+      let correctCount = 0
+
+      if (storedQuestions.length > 0 && 'question' in storedQuestions[0]) {
+        // Multi-question format
+        totalQuestions = storedQuestions.length
+        storedQuestions.forEach(q => {
+          const correctOpt = (q.options || []).find((o: any) => o.isCorrect)
+          if (correctOpt && req.body.answers && req.body.answers[q.id || challenge.id] === correctOpt.id) {
+            correctCount++
+          }
+        })
+      } else if (storedQuestions.length > 0) {
+        // Single-question format
+        totalQuestions = 1
+        const correctOpt = storedQuestions.find((o: any) => o.isCorrect)
+        if (correctOpt && req.body.answers && req.body.answers[challenge.id] === correctOpt.id) {
+          correctCount++
+        }
+      }
+
+      const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0
+      const PASSING_SCORE = 70
+      const passed = score >= PASSING_SCORE
+
+      const COOLDOWN_HOURS = 24
+      const canRetryAt = !passed
+        ? new Date(Date.now() + COOLDOWN_HOURS * 60 * 60 * 1000)
+        : undefined
+
+      const attempt = await prisma.challengeAttempt.create({
+        data: {
+          userId,
+          challengeId,
+          isCorrect: passed,
+          answer: JSON.stringify(req.body.answers || {}),
+          canRetryAt: canRetryAt ?? null,
+          xpAwarded: passed ? challenge.xpReward : 0,
+        },
+      })
+
+      let xpEarned = 0
+      if (passed) {
+        xpEarned = await grantXp(userId, 'CHALLENGE_QUIZ_CORRECT', `Challenge: ${challenge.title}`, challenge.xpReward)
+        await updateBadge(userId)
+      }
+
+      return res.json({
+        success: true,
+        data: { score, passed, correct: correctCount, totalQuestions, xpEarned, attemptId: attempt.id, type: 'QUIZ' },
+      })
     }
+    
+    // ── IF PROJECT ───────────────────────────────────────────────────────
+    if (challenge.type === 'PROJECT') {
+      const { linkUrl, answer } = req.body
+      if (!linkUrl && !answer) throw createError(400, 'Tautan atau jawaban harus diisi')
 
-    // Evaluate
-    const options = (challenge.options as Array<{
-      id: string; text: string; isCorrect: boolean
-    }> | null) ?? []
-    const correctOption = options.find((o) => o.isCorrect)
-    const chosen = answers[challengeId]  // key is challengeId for single-question
-    const isCorrect = !!correctOption && chosen === correctOption.id
+      const attempt = await prisma.challengeAttempt.create({
+        data: {
+          userId,
+          challengeId,
+          isCorrect: null, // Pending grading by Admin
+          linkUrl: linkUrl || null,
+          answer: answer || null,
+          xpAwarded: null, 
+        },
+      })
 
-    const score = isCorrect ? 100 : 0
-    const passed = score >= PASSING_SCORE
-
-    const canRetryAt = !passed
-      ? new Date(Date.now() + COOLDOWN_HOURS * 60 * 60 * 1000)
-      : undefined
-
-    const attempt = await prisma.challengeAttempt.create({
-      data: {
-        userId,
-        challengeId,
-        isCorrect: passed,
-        answer: chosen,
-        canRetryAt: canRetryAt ?? null,
-        xpAwarded: passed ? challenge.xpReward : 0,
-      },
-    })
-
-    let xpEarned = 0
-    if (passed) {
-      xpEarned = await grantXp(
-        userId,
-        'CHALLENGE_QUIZ_CORRECT',
-        `Challenge: ${challenge.title}`,
-        challenge.xpReward
-      )
-      await updateBadge(userId)
+      return res.json({
+        success: true,
+        data: { passed: null, xpEarned: 0, attemptId: attempt.id, type: 'PROJECT' },
+      })
     }
-
-    res.json({
-      success: true,
-      data: {
-        score, passed, correct: isCorrect ? 1 : 0, totalQuestions: 1,
-        xpEarned, attemptId: attempt.id,
-      },
-    })
   } catch (err) { next(err) }
 })

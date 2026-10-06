@@ -10,7 +10,7 @@ notificationRouter.use(authenticate)
 // ── GET /notifications ──────────────────────────────────────
 notificationRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, unread } = req.query
+    const { page = 1, limit = 20, unread } = req.query as Record<string, string>
     const userId = req.user!.id
 
     const where: Record<string, unknown> = { userId }
@@ -53,9 +53,9 @@ notificationRouter.patch('/read-all', async (req: AuthRequest, res: Response, ne
 // ── PATCH /notifications/:id/read ──────────────────────────
 notificationRouter.patch('/:id/read', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const notif = await prisma.notification.findUnique({ where: { id: req.params.id } })
+    const notif = await prisma.notification.findUnique({ where: { id: (req.params as Record<string, string>).id } })
     if (!notif || (notif as any).userId !== req.user!.id) throw createError(404, 'Notifikasi tidak ditemukan')
-    await prisma.notification.update({ where: { id: req.params.id }, data: { isRead: true } })
+    await prisma.notification.update({ where: { id: (req.params as Record<string, string>).id }, data: { isRead: true } })
     res.json({ success: true })
   } catch (err) { next(err) }
 })
@@ -63,9 +63,9 @@ notificationRouter.patch('/:id/read', async (req: AuthRequest, res: Response, ne
 // ── DELETE /notifications/:id ───────────────────────────────
 notificationRouter.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const notif = await prisma.notification.findUnique({ where: { id: req.params.id } })
+    const notif = await prisma.notification.findUnique({ where: { id: (req.params as Record<string, string>).id } })
     if (!notif || (notif as any).userId !== req.user!.id) throw createError(404, 'Notifikasi tidak ditemukan')
-    await prisma.notification.delete({ where: { id: req.params.id } })
+    await prisma.notification.delete({ where: { id: (req.params as Record<string, string>).id } })
     res.json({ success: true })
   } catch (err) { next(err) }
 })

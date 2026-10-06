@@ -14,14 +14,14 @@ export const authRouter = Router()
 function generateAccessToken(user: { id: string; email: string; role: string; name: string }) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role, name: user.name },
-    process.env.JWT_ACCESS_SECRET!,
-    { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m' }
+    process.env.JWT_ACCESS_SECRET as string,
+    { expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as any }
   )
 }
 
 function generateRefreshToken(userId: string) {
-  return jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET!, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+  return jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET as string, {
+    expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as any,
   })
 }
 
@@ -175,7 +175,7 @@ authRouter.post('/logout', async (req: Request, res: Response, next: NextFunctio
 // ── GET /auth/verify-email ─────────────────────────────────
 authRouter.get('/verify-email', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = z.string().min(1).parse(req.query.token)
+    const token = z.string().min(1).parse((req.query as Record<string, string>).token)
 
     const record = await prisma.emailVerifyToken.findUnique({ where: { token } })
     if (!record || record.expiresAt < new Date()) {
@@ -285,7 +285,7 @@ authRouter.get('/google', (_req, res) => {
 // ── GET /auth/google/callback ──────────────────────────────
 authRouter.get('/google/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { code } = req.query
+    const { code } = req.query as Record<string, string>
     if (!code) throw createError(400, 'Authorization code tidak ada')
 
     // Exchange code for tokens
@@ -300,13 +300,13 @@ authRouter.get('/google/callback', async (req: Request, res: Response, next: Nex
         grant_type: 'authorization_code',
       }),
     })
-    const tokens = await tokenRes.json()
+    const tokens = await tokenRes.json() as any
 
     // Get user info
     const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })
-    const profile = await profileRes.json()
+    const profile = await profileRes.json() as any
 
     if (!profile.email) throw createError(400, 'Tidak bisa mendapatkan email dari Google')
 
@@ -444,3 +444,139 @@ authRouter.post('/change-password', authenticate, async (req: AuthRequest, res: 
     res.json({ success: true, message: 'Password berhasil diubah' })
   } catch (err) { next(err) }
 })
+
+
+// ── POST /auth/google/mobile (OMNICHANNEL MOBILE OAUTH) ──────
+authRouter.post('/google/mobile', async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) throw createError(400, 'ID Token Google wajib dikirim');
+
+    const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+    const profile = await googleRes.json();
+
+    if (!googleRes.ok || !profile.email) {
+      throw createError(401, 'ID Token Google tidak valid atau kedaluwarsa');
+    }
+
+    let user = await prisma.user.findFirst({
+      where: { OR: [{ googleId: profile.sub }, { email: profile.email }] },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: profile.email,
+          name: profile.name || 'Mentee Baru',
+          googleId: profile.sub,
+          photoUrl: profile.picture,
+          isEmailVerified: true,
+        },
+      });
+    } else if (!user.googleId) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { googleId: profile.sub, photoUrl: user.photoUrl || profile.picture, isEmailVerified: true },
+      });
+    }
+
+    if (user.isSuspended) throw createError(403, 'Akun ini telah disuspend');
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user.id);
+
+    await prisma.userSession.upsert({
+      where: { refreshToken },
+      update: { expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      create: { userId: user.id, refreshToken, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000, 
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
+    });
+
+    res.json({
+      success: true,
+      message: 'Login Google Mobile berhasil',
+      data: {
+        accessToken,
+        user: { id: user.id, email: user.email, name: user.name, role: user.role, photoUrl: user.photoUrl },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /auth/request-otp ────────────────────────────────
+import { WhatsAppService } from '../services/whatsapp.service';
+
+authRouter.post('/request-otp', async (req, res, next) => {
+  try {
+    const { phone, purpose } = req.body;
+    if (!phone || !purpose) throw createError(400, 'Nomor HP dan purpose wajib diisi');
+
+    const user = await prisma.user.findUnique({ where: { phone } });
+    if (!user) throw createError(404, 'User dengan nomor HP tersebut tidak ditemukan');
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await prisma.otpCode.create({
+      data: {
+        userId: user.id,
+        code: otp,
+        purpose: purpose, // 'PASSWORD_RESET' atau 'PHONE_VERIFICATION'
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 menit
+      }
+    });
+
+    // Kirim via WA API
+    await WhatsAppService.sendOTP(phone, otp);
+
+    res.json({ success: true, message: 'OTP berhasil dikirim ke WhatsApp Anda' });
+  } catch (err) { next(err) }
+});
+
+// ── POST /auth/verify-otp ─────────────────────────────────
+authRouter.post('/verify-otp', async (req, res, next) => {
+  try {
+    const { phone, code, purpose, newPassword } = req.body;
+    if (!phone || !code || !purpose) throw createError(400, 'Data tidak lengkap');
+
+    const user = await prisma.user.findUnique({ where: { phone } });
+    if (!user) throw createError(404, 'User tidak ditemukan');
+
+    const validOtp = await prisma.otpCode.findFirst({
+      where: { userId: user.id, code, purpose, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!validOtp) throw createError(400, 'OTP salah atau sudah kedaluwarsa');
+
+    // Jika purpose adalah PASSWORD_RESET
+    if (purpose === 'PASSWORD_RESET' && newPassword) {
+      const hashed = await bcrypt.hash(newPassword, 12);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: hashed }
+      });
+    } else if (purpose === 'PHONE_VERIFICATION') {
+      // Implementasi verifikasi nomor
+    }
+
+    // Hapus OTP setelah sukses
+    await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose } });
+
+    res.json({ success: true, message: 'Verifikasi OTP berhasil' });
+  } catch (err) { next(err) }
+});

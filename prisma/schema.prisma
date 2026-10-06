@@ -134,8 +134,7 @@ model User {
 
   // Relations
   sessions          UserSession[]
-  emailVerifyTokens EmailVerifyToken[]
-  passwordResetTokens PasswordResetToken[]
+  otpCodes          OtpCode[]
   bootcampEnrollments BootcampEnrollment[]
   courseEnrollments   CourseEnrollment[]
   sessionProgress     SessionProgress[]
@@ -169,28 +168,24 @@ model UserSession {
   @@map("user_sessions")
 }
 
-model EmailVerifyToken {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("email_verify_tokens")
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  PHONE_VERIFICATION
 }
 
-model PasswordResetToken {
-  id        String   @id @default(cuid())
+model OtpCode {
+  id        String     @id @default(cuid())
   userId    String
-  token     String   @unique
+  code      String     // 6-digit OTP
+  purpose   OtpPurpose
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("password_reset_tokens")
+  @@index([userId, code])
+  @@map("otp_codes")
 }
 
 // ─────────────────────────────────────────────
@@ -255,6 +250,9 @@ model Bootcamp {
   reviews       Review[]
   wishlistItems WishlistItem[]
   transactions  Transaction[]
+
+  certificateTemplateId String?
+  certificateTemplate CertificateTemplate? @relation(fields: [certificateTemplateId], references: [id])
 
   @@map("bootcamps")
 }
@@ -365,6 +363,9 @@ model MiniCourse {
   reviews       Review[]
   wishlistItems WishlistItem[]
   transactions  Transaction[]
+
+  certificateTemplateId String?
+  certificateTemplate CertificateTemplate? @relation(fields: [certificateTemplateId], references: [id])
 
   @@map("mini_courses")
 }
@@ -636,6 +637,23 @@ model Certificate {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("certificates")
+}
+
+model CertificateTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  type        CertType // BOOTCAMP or MINI_COURSE
+  bgImage     String   // URL of the uploaded image
+  // JSON structure for positions, e.g. { name: {x,y,fontSize,color}, title: {x,y,fontSize,color}, date: {x,y,fontSize,color}, credentialId: {x,y,fontSize,color} }
+  config      Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bootcamps   Bootcamp[]
+  miniCourses MiniCourse[]
+
+  @@map("certificate_templates")
 }
 
 model CertificateConfig {

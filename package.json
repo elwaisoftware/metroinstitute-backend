@@ -12,7 +12,8 @@
     "db:seed": "tsx prisma/seed/index.ts",
     "db:studio": "node node_modules/prisma/build/index.js studio",
     "db:reset": "node node_modules/prisma/build/index.js migrate reset --force && npm run db:seed",
-    "db:generate": "node node_modules/prisma/build/index.js generate"
+    "db:generate": "node node_modules/prisma/build/index.js generate",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed/index.ts"
@@ -46,10 +47,12 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/midtrans-client": "^1.4.0",
     "@types/multer": "^2.2.0",
     "@types/nodemailer": "^8.0.2",
     "prisma": "^5.22.0",

@@ -47,7 +47,7 @@ wishlistRouter.post('/', async (req: AuthRequest, res: Response, next: NextFunct
 wishlistRouter.delete('/course/:courseId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await prisma.wishlistItem.deleteMany({
-      where: { userId: req.user!.id, courseId: req.params.courseId },
+      where: { userId: req.user!.id, courseId: (req.params as Record<string, string>).courseId },
     })
     res.json({ success: true })
   } catch (err) { next(err) }
@@ -57,7 +57,7 @@ wishlistRouter.delete('/course/:courseId', async (req: AuthRequest, res: Respons
 wishlistRouter.delete('/bootcamp/:bootcampId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await prisma.wishlistItem.deleteMany({
-      where: { userId: req.user!.id, bootcampId: req.params.bootcampId },
+      where: { userId: req.user!.id, bootcampId: (req.params as Record<string, string>).bootcampId },
     })
     res.json({ success: true })
   } catch (err) { next(err) }

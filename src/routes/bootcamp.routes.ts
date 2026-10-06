@@ -10,7 +10,7 @@ export const bootcampRouter = Router()
 // ── GET /bootcamps ─────────────────────────────────────────
 bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { search, field, level, status } = req.query
+    const { search, field, level, status } = req.query as Record<string, string>
     const where: Record<string, unknown> = { isPublished: true }
     if (field) where.field = field
     if (level) where.level = level
@@ -26,6 +26,7 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
         reviewCount: true, enrollmentCount: true, batchStatus: true,
         registrationDeadline: true, batchStartDate: true,
         mentorName: true, mentorPhotoUrl: true, tags: true,
+        isPublished: true, isFeatured: true,
       },
     })
     res.json({ success: true, data: bootcamps })
@@ -61,8 +62,8 @@ bootcampRouter.get('/enrolled', authenticate, async (req: AuthRequest, res: Resp
 // ── GET /bootcamps/:id ─────────────────────────────────────
 bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const bootcamp = await prisma.bootcamp.findUnique({
-      where: { id: req.params.id, isPublished: true },
+    const bootcamp = await prisma.bootcamp.findFirst({
+      where: { id: (req.params as Record<string, string>).id, isPublished: true },
       include: {
         chapters: {
           orderBy: { orderIndex: 'asc' },
@@ -116,7 +117,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
 // ── GET /bootcamps/:id/learn/:sessionId ────────────────────
 bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { id: bootcampId, sessionId } = req.params
+    const { id: bootcampId, sessionId } = req.params as Record<string, string>
     const userId = req.user!.id
 
     // Verify enrollment
@@ -192,7 +193,7 @@ bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthReques
 // ── POST /bootcamps/:id/sessions/:sessionId/complete ──────
 bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { id: bootcampId, sessionId } = req.params
+    const { id: bootcampId, sessionId } = req.params as Record<string, string>
     const userId = req.user!.id
 
     const enrollment = await prisma.bootcampEnrollment.findUnique({

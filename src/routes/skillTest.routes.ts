@@ -21,17 +21,20 @@ skillTestRouter.get('/questions', async (req: AuthRequest, res: Response, next: 
     // Allow re-take only if not done yet (or admin unlocked)
     // if (user?.skillTestDone) throw createError(403, 'Kamu sudah menyelesaikan skill test')
 
-    const questions = await prisma.skillTestQuestion.findMany({
+    const questionsRaw = await prisma.skillTestQuestion.findMany({
       where: { isActive: true },
       orderBy: { orderIndex: 'asc' },
       select: {
         id: true, question: true, imageUrl: true, orderIndex: true,
-        options: {
-          orderBy: { orderIndex: 'asc' },
-          select: { id: true, text: true }, // Never expose isCorrect to client
-        },
+        options: true, // options is a JSON field
       },
     })
+
+    // Parse options if it's stored as string or just pass it if it's already an object
+    const questions = questionsRaw.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }))
 
     if (questions.length === 0) throw createError(503, 'Soal skill test belum tersedia')
 
@@ -51,43 +54,55 @@ skillTestRouter.post('/submit', async (req: AuthRequest, res: Response, next: Ne
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { skillTestDone: true } })
     if (user?.skillTestDone) throw createError(409, 'Skill test sudah pernah diselesaikan')
 
-    // Load questions + correct answers
+    // Load questions
     const questions = await prisma.skillTestQuestion.findMany({
       where: { isActive: true, id: { in: Object.keys(answers) } },
-      include: { options: true },
     })
 
     if (questions.length === 0) throw createError(400, 'Jawaban tidak valid')
 
     // Score per field
     const fieldScores: Record<string, number> = {}
-    let totalQuestions = questions.length
 
     for (const q of questions) {
       const chosenOptionId = answers[q.id]
-      const chosenOption = q.options.find((o) => o.id === chosenOptionId)
-      if (chosenOption?.isCorrect) {
-        const field = q.field
+      const optionsArray = (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) as any[]
+      const chosenOption = optionsArray.find(o => o.id === chosenOptionId)
+      
+      const field = chosenOption?.field
+      if (field) {
         fieldScores[field] = (fieldScores[field] || 0) + 1
       }
     }
 
-    // Convert to percentages
+    // Convert to percentages based on max possible score per field
+    // Max possible score for a field = number of questions that have an option for that field
     const fieldTotals: Record<string, number> = {}
     for (const q of questions) {
-      fieldTotals[q.field] = (fieldTotals[q.field] || 0) + 1
+      const optionsArray = (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) as any[]
+      // Get unique fields available in this question
+      const availableFields = new Set(optionsArray.map(o => o.field).filter(Boolean))
+      for (const f of availableFields) {
+        fieldTotals[f as string] = (fieldTotals[f as string] || 0) + 1
+      }
     }
 
     const scores: Record<string, number> = {}
-    for (const [field, count] of Object.entries(fieldTotals)) {
-      scores[field] = Math.round(((fieldScores[field] || 0) / count) * 100)
+    for (const [field, maxScore] of Object.entries(fieldTotals)) {
+      const earned = fieldScores[field] || 0
+      scores[field] = maxScore > 0 ? Math.round((earned / maxScore) * 100) : 0
     }
 
-    // Find top field
-    const topField = Object.entries(scores).sort(([, a], [, b]) => b - a)[0]?.[0] || 'FRONTEND'
+    // Check for ties in the top score
+    const sortedScores = Object.entries(scores).sort(([, a], [, b]) => b - a)
+    const topScore = sortedScores[0]?.[1] || 0
+    const topFields = sortedScores.filter(([, score]) => score === topScore).map(([f]) => f)
+    
+    // Default to the first one for now, but save all ties to skillTestResult
+    const topField = topFields[0] || 'FRONTEND'
 
     // Save result + grant XP
-    const xpEarned = await grantXp(userId, 'SKILL_TEST_DONE', 'Skill Test selesai')
+    const xpEarned = await grantXp(userId, 'SKILL_TEST_COMPLETE', 'Skill Test selesai')
 
     await prisma.user.update({
       where: { id: userId },
@@ -100,17 +115,17 @@ skillTestRouter.post('/submit', async (req: AuthRequest, res: Response, next: Ne
 
     await updateBadge(userId)
 
-    // Save detail answers for analytics
-    await prisma.skillTestSubmission.createMany({
-      data: Object.entries(answers).map(([questionId, optionId]) => ({
-        userId, questionId, selectedOptionId: optionId,
-      })),
-      skipDuplicates: true,
-    })
+    // Save detail answers for analytics - Model not created yet in Prisma schema
+    // await prisma.skillTestSubmission.createMany({
+    //   data: Object.entries(answers).map(([questionId, optionId]) => ({
+    //     userId, questionId, selectedOptionId: optionId,
+    //   })),
+    //   skipDuplicates: true,
+    // })
 
     res.json({
       success: true,
-      data: { scores, topField, xpEarned, recommendation: topField },
+      data: { scores, topField, xpEarned, recommendation: topField, tiedFields: topFields.length > 1 ? topFields : null },
     })
   } catch (err) { next(err) }
 })
@@ -126,7 +141,13 @@ skillTestRouter.get('/result', async (req: AuthRequest, res: Response, next: Nex
       throw createError(404, 'Hasil skill test tidak ditemukan')
     }
 
-    const xpConfig = await prisma.xpConfig.findUnique({ where: { source: 'SKILL_TEST_DONE' } })
+    const xpConfig = await prisma.xpConfig.findUnique({ where: { source: 'SKILL_TEST_COMPLETE' } })
+
+    // Calculate ties if multiple fields have the same top score
+    const scores = user.skillTestResult as Record<string, number>
+    const sortedScores = Object.entries(scores).sort(([, a], [, b]) => b - a)
+    const topScore = sortedScores[0]?.[1] || 0
+    const topFields = sortedScores.filter(([, score]) => score === topScore).map(([f]) => f)
 
     res.json({
       success: true,
@@ -135,6 +156,7 @@ skillTestRouter.get('/result', async (req: AuthRequest, res: Response, next: Nex
         topField: user.selectedField,
         xpEarned: xpConfig?.amount || 50,
         recommendation: user.selectedField,
+        tiedFields: topFields.length > 1 ? topFields : null,
       },
     })
   } catch (err) { next(err) }

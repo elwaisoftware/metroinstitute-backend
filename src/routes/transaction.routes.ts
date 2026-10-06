@@ -90,7 +90,7 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
 // ── GET /transactions ──────────────────────────────────────
 transactionRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query
+    const { status, page = 1, limit = 20 } = req.query as Record<string, string>
     const where: Record<string, unknown> = { userId: req.user!.id }
     if (status) where.status = status
 
@@ -115,7 +115,7 @@ transactionRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
 transactionRouter.get('/:orderId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const tx = await prisma.transaction.findUnique({
-      where: { orderId: req.params.orderId },
+      where: { orderId: (req.params as Record<string, string>).orderId },
       select: {
         id: true, orderId: true, productType: true, title: true,
         amount: true, status: true, snapToken: true, createdAt: true, paidAt: true,
