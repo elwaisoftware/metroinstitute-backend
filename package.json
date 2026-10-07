@@ -11,7 +11,7 @@
     "db:push": "node node_modules/prisma/build/index.js db push",
     "db:seed": "tsx prisma/seed/index.ts",
     "db:studio": "node node_modules/prisma/build/index.js studio",
-    "db:reset": "node node_modules/prisma/build/index.js migrate reset --force && npm run db:seed",
+    "db:reset": "node node_modules/prisma/build/index.js db push --force-reset && npm run db:seed",
     "db:generate": "node node_modules/prisma/build/index.js generate",
     "postinstall": "prisma generate"
   },
