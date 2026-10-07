@@ -35,3 +35,6 @@ temp-*/
 .Trashes
 ehthumbs.db
 Thumbs.db
+*.db
+*.sqlite
+*.db-journal

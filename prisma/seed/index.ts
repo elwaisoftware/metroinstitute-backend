@@ -11,31 +11,15 @@ async function main() {
   if (!adminExists) {
     await prisma.user.create({
       data: {
-        name: 'Super Admin Metro',
-        email: 'admin@metroinstitute.id',
-        passwordHash: await bcrypt.hash('Metro@Admin2026', 12),
+        name: 'Metro Institute',
+        email: 'adminmetroinstitute@gmail.com',
+        passwordHash: await bcrypt.hash('metinnih1', 12),
         role: 'SUPER_ADMIN',
         isEmailVerified: true,
         phone: '082000000001',
       }
     })
     console.log('✅ Super Admin created')
-  }
-
-  // ── Mentee Account ────────────────────────────────────────────
-  const menteeExists = await prisma.user.findFirst({ where: { email: 'mentee@metroinstitute.id' } })
-  if (!menteeExists) {
-    await prisma.user.create({
-      data: {
-        name: 'Mentee Teladan',
-        email: 'mentee@metroinstitute.id',
-        passwordHash: await bcrypt.hash('Mentee2026!', 12),
-        role: 'MENTEE',
-        isEmailVerified: true,
-        phone: '082000000002',
-      }
-    })
-    console.log('✅ Default Mentee created')
   }
 
   // ── XP Config ─────────────────────────────────────────────────
