@@ -43,10 +43,11 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
       name: z.string().min(2).max(80),
       email: z.string().email(),
       phone: z.string().min(10).regex(/^(08|62|\+62)/),
-      password: z.string().min(8)
-        .regex(/[A-Z]/, 'Harus ada huruf besar')
-        .regex(/[a-z]/, 'Harus ada huruf kecil')
-        .regex(/[0-9]/, 'Harus ada angka'),
+      password: z.string()
+        .min(8, 'Password minimal 8 karakter, mengandung huruf kapital, huruf kecil, dan angka')
+        .regex(/[A-Z]/, 'Password minimal 8 karakter, mengandung huruf kapital, huruf kecil, dan angka')
+        .regex(/[a-z]/, 'Password minimal 8 karakter, mengandung huruf kapital, huruf kecil, dan angka')
+        .regex(/[0-9]/, 'Password minimal 8 karakter, mengandung huruf kapital, huruf kecil, dan angka'),
     })
     const data = schema.parse(req.body)
 
@@ -71,7 +72,7 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     })
-    await sendEmail({
+    sendEmail({
       to: user.email,
       subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
       html: `
@@ -80,7 +81,7 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
         <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f0fdf4;padding:16px 24px;border-radius:8px;display:inline-block;color:#018556">${verifyOtp}</div>
         <p>Kode berlaku 24 jam. Jika kamu tidak mendaftar, abaikan email ini.</p>
       `,
-    })
+    }).catch(e => console.error('Background email failed:', e))
 
     res.status(201).json({ success: true, message: 'Registrasi berhasil. Cek email untuk verifikasi.' })
   } catch (err) { next(err) }
@@ -357,9 +358,7 @@ authRouter.get('/google/callback', async (req: Request, res: Response, next: Nex
     setRefreshCookie(res, refreshToken)
 
     const frontendUrl = process.env.FRONTEND_URL!
-    const redirectUrl = user.skillTestDone
-      ? `${frontendUrl}/mentee/basecamp?token=${accessToken}`
-      : `${frontendUrl}/skill-test?token=${accessToken}`
+    const redirectUrl = `${frontendUrl}/callback?token=${accessToken}`
 
     res.redirect(redirectUrl)
   } catch (err) { next(err) }
