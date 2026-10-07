@@ -5,22 +5,12 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { WhatsAppService } from '../services/whatsapp.service'
 import multer from 'multer'
+import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
-import fs from 'fs'
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const dir = path.join(process.cwd(), 'uploads')
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    cb(null, dir)
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname))
-  }
-})
+import fsOriginal from 'fs'
 
 const upload = multer({
-  storage: storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 })
 
@@ -704,12 +694,15 @@ adminRouter.post('/upload', upload.single('file'), async (req: AuthRequest, res:
   try {
     if (!req.file) throw createError(400, 'File tidak ditemukan')
     
-    // Because we used diskStorage, the file is saved locally.
-    // Construct the URL to access it statically via the backend URL
-    const backendUrl = process.env.API_URL || 'http://localhost:5000'
-    const fileUrl = `${backendUrl}/uploads/${req.file.filename}`
+    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'metro-institute/admin-uploads' },
+        (err, result) => err ? reject(err) : resolve(result as { secure_url: string })
+      )
+      stream.end(req.file!.buffer)
+    })
     
-    res.json({ success: true, url: fileUrl })
+    res.json({ success: true, url: result.secure_url })
   } catch (err) { next(err) }
 })
 
