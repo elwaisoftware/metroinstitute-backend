@@ -9,7 +9,9 @@ export const webhookRouter = Router()
 // body is raw (configured in server.ts with rawBody middleware)
 webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+    let body = req.body
+    if (Buffer.isBuffer(body)) body = JSON.parse(body.toString('utf8'))
+    else if (typeof body === 'string') body = JSON.parse(body)
     const {
       order_id, transaction_status, fraud_status,
       gross_amount, signature_key, status_code,
