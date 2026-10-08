@@ -82,12 +82,12 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
         userId: user.id,
         code: verifyOtp,
         purpose: 'EMAIL_VERIFICATION',
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
       },
     })
     sendEmail({
       to: user.email,
-      subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
+      subject: 'Kode OTP Verifikasi Email - Metro Institute',
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
           <div style="text-align: center; margin-bottom: 32px;">
@@ -103,7 +103,7 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
               <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${verifyOtp}</span>
             </div>
             <p style="font-size: 14px; color: #6b7280; margin: 0;">
-              Kode ini berlaku selama 24 jam.<br>
+              Kode ini berlaku selama 5 menit.<br>
               Jika kamu tidak merasa mendaftar di Metro Institute, silakan abaikan email ini.
             </p>
           </div>
@@ -238,12 +238,12 @@ authRouter.post('/resend-verify', async (req: Request, res: Response, next: Next
     const newOtp = Math.floor(100000 + Math.random() * 900000).toString()
     await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'EMAIL_VERIFICATION' } })
     await prisma.otpCode.create({
-      data: { userId: user.id, code: newOtp, purpose: 'EMAIL_VERIFICATION', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      data: { userId: user.id, code: newOtp, purpose: 'EMAIL_VERIFICATION', expiresAt: new Date(Date.now() + 5 * 60 * 1000) }, // 5 minutes
     })
 
     sendEmail({
       to: email,
-      subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
+      subject: 'Kode OTP Verifikasi Email - Metro Institute',
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
           <div style="text-align: center; margin-bottom: 32px;">
@@ -259,7 +259,7 @@ authRouter.post('/resend-verify', async (req: Request, res: Response, next: Next
               <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${newOtp}</span>
             </div>
             <p style="font-size: 14px; color: #6b7280; margin: 0;">
-              Kode ini berlaku selama 24 jam.<br>
+              Kode ini berlaku selama 5 menit.<br>
               Jika kamu tidak meminta kode verifikasi ini, silakan abaikan email ini.
             </p>
           </div>
@@ -287,11 +287,11 @@ authRouter.post('/forgot-password', async (req: Request, res: Response, next: Ne
       const otp = Math.floor(100000 + Math.random() * 900000).toString()
       await prisma.otpCode.deleteMany({ where: { userId: user.id, purpose: 'PASSWORD_RESET' } })
       await prisma.otpCode.create({
-        data: { userId: user.id, code: otp, purpose: 'PASSWORD_RESET', expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+        data: { userId: user.id, code: otp, purpose: 'PASSWORD_RESET', expiresAt: new Date(Date.now() + 5 * 60 * 1000) }, // 5 minutes
       })
       await sendEmail({
         to: email,
-        subject: '🔐 Kode OTP Reset Password - Metro Institute',
+        subject: 'Kode OTP Reset Password - Metro Institute',
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
             <div style="text-align: center; margin-bottom: 32px;">
@@ -307,7 +307,7 @@ authRouter.post('/forgot-password', async (req: Request, res: Response, next: Ne
                 <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${otp}</span>
               </div>
               <p style="font-size: 14px; color: #6b7280; margin: 0;">
-                Kode ini berlaku selama 1 jam.<br>
+                Kode ini berlaku selama 5 menit.<br>
                 Jika kamu tidak meminta reset password, silakan abaikan email ini dan pastikan akun kamu aman.
               </p>
             </div>
