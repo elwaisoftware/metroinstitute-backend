@@ -765,15 +765,20 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         skip: (p - 1) * l,
         take: l,
         include: {
-          _count: { select: { registrations: true } }
+          _count: { select: { enrollments: true } }
         }
       })
     ])
 
+    const mappedItems = items.map((item: any) => ({
+      ...item,
+      _count: { registrations: item._count?.enrollments || 0 }
+    }))
+
     res.json({
       success: true,
       data: {
-        items,
+        items: mappedItems,
         pagination: { total, page: p, limit: l, totalPages: Math.ceil(total / l) }
       }
     })
