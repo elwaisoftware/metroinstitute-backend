@@ -772,11 +772,12 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
     ])
 
     const mappedItems = items.map((item: any) => {
-      let mappedStatus = item.batchStatus
-      if (!item.isPublished) mappedStatus = 'DRAFT'
-      else if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-      else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
-      else mappedStatus = item.batchStatus
+      let mappedStatus = 'DRAFT'
+      if (item.isPublished) {
+        if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+        else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+        else mappedStatus = 'DRAFT' // Fallback for legacy statuses
+      }
 
       return {
         ...item,
@@ -848,7 +849,14 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
     })
     
     if (!bootcamp) return next(createError(404, 'Bootcamp tidak ditemukan'))
-    res.json({ success: true, data: bootcamp })
+    
+    let mappedStatus = 'DRAFT'
+    if (bootcamp.isPublished) {
+      if (bootcamp.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+      else if (bootcamp.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+    }
+
+    res.json({ success: true, data: { ...bootcamp, status: mappedStatus } })
   } catch (err) { next(err) }
 })
 
