@@ -851,6 +851,29 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
   } catch (err) { next(err) }
 })
 
+// ── GET /admin/bootcamps/:id/schedules ───────────────────────
+adminRouter.get('/bootcamps/:id/schedules', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const sessions = await prisma.bootcampSession.findMany({
+      where: { chapter: { bootcampId: id }, type: 'LIVE' },
+      orderBy: { liveScheduledAt: 'asc' },
+      include: { _count: { select: { attendances: true } } }
+    })
+    const mapped = sessions.map(s => ({
+      id: s.id,
+      title: s.title,
+      scheduledAt: s.liveScheduledAt,
+      durationMin: s.videoDuration,
+      meetingUrl: s.liveUrl,
+      recordingUrl: s.videoUrl,
+      attendanceWindowMin: s.attendanceWindowMin,
+      _count: s._count
+    }))
+    res.json({ success: true, data: mapped })
+  } catch (err) { next(err) }
+})
+
 // ── GET /admin/bootcamps/:id/chapters ────────────────────────
 adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -1168,21 +1191,31 @@ adminRouter.delete('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest
 adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id: bootcampId, sessionId } = req.params as Record<string, string>;
-    const { title, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline } = req.body;
+    const { title, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline, scheduledAt, durationMin, attendanceWindowMin, meetingUrl, recordingUrl } = req.body;
 
     let parsedDeadline = null;
     if (assignmentDeadline) parsedDeadline = new Date(assignmentDeadline);
+    
+    let parsedScheduledAt = undefined;
+    if (scheduledAt) parsedScheduledAt = new Date(scheduledAt);
 
-    let finalLiveUrl = liveUrl;
+    let finalLiveUrl = liveUrl || meetingUrl;
     if (type === 'LIVE' && !finalLiveUrl) finalLiveUrl = `jitsi:metro-${bootcampId}-${Date.now()}`;
 
     const updated = await prisma.bootcampSession.update({
       where: { id: sessionId },
       data: {
-        title, type, isFreePreview: isPreview || false,
-        videoUrl, liveUrl: finalLiveUrl,
+        title: title !== undefined ? title : undefined, 
+        type: type !== undefined ? type : undefined, 
+        isFreePreview: isPreview !== undefined ? isPreview : undefined,
+        videoUrl: recordingUrl !== undefined ? recordingUrl : (videoUrl !== undefined ? videoUrl : undefined), 
+        liveUrl: finalLiveUrl !== undefined ? finalLiveUrl : undefined,
         materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
-        assignmentDescription, assignmentDeadline: parsedDeadline
+        assignmentDescription: assignmentDescription !== undefined ? assignmentDescription : undefined, 
+        assignmentDeadline: parsedDeadline !== null ? parsedDeadline : undefined,
+        liveScheduledAt: parsedScheduledAt,
+        videoDuration: durationMin !== undefined ? durationMin : undefined,
+        attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined
       }
     });
     res.json({ success: true, data: updated });
