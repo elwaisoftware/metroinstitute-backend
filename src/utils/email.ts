@@ -1,17 +1,9 @@
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { logger } from './logger'
 
-const port = Number(process.env.SMTP_PORT) || 587
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: port,
-  secure: port === 465, // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-})
+// Inisialisasi Resend API dengan kunci dari .env
+// Jika belum ada RESEND_API_KEY, ini akan undefined tapi tidak akan error sampai kita mengirim email
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 interface EmailOptions {
   to: string
@@ -22,16 +14,21 @@ interface EmailOptions {
 
 export async function sendEmail({ to, subject, html, text }: EmailOptions) {
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to,
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'Metro Institute <no-reply@metroinstitute.site>',
+      to: [to],
       subject,
       html,
       text: text || html.replace(/<[^>]+>/g, ''),
     })
-    logger.info(`Email sent to ${to}: ${subject}`)
+
+    if (error) {
+      logger.error(`Resend API Error for ${to}:`, error)
+      return
+    }
+
+    logger.info(`Email sent via Resend to ${to} (ID: ${data?.id})`)
   } catch (err) {
-    logger.error('Failed to send email', { to, subject, error: err })
-    // Don't throw — email failure shouldn't break main flow
+    logger.error('Failed to send email via Resend', { to, subject, error: err })
   }
 }
