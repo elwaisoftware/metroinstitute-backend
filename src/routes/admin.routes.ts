@@ -775,6 +775,87 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err) }
 })
 
+// ── GET /admin/bootcamps/:id/chapters ────────────────────────
+adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const chapters = await prisma.bootcampChapter.findMany({
+      where: { bootcampId: req.params.id },
+      orderBy: { orderIndex: 'asc' },
+      include: {
+        sessions: {
+          orderBy: { orderIndex: 'asc' }
+        }
+      }
+    })
+    
+    // Map orderIndex -> order for frontend compatibility
+    const mappedChapters = chapters.map(ch => ({
+      ...ch,
+      order: ch.orderIndex,
+      sessions: ch.sessions.map(s => ({ ...s, order: s.orderIndex }))
+    }))
+    
+    res.json({ success: true, data: mappedChapters })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/bootcamps/:id/chapters ───────────────────────
+adminRouter.post('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { title } = req.body
+    
+    const count = await prisma.bootcampChapter.count({ where: { bootcampId: req.params.id } })
+    const chapter = await prisma.bootcampChapter.create({
+      data: {
+        bootcampId: req.params.id,
+        title,
+        orderIndex: count
+      }
+    })
+    res.json({ success: true, data: chapter })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/bootcamps/:id/chapters/:chapterId/sessions ───
+adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { chapterId } = req.params
+    const { title, type, isPreview } = req.body
+    
+    const count = await prisma.bootcampSession.count({ where: { chapterId } })
+    const session = await prisma.bootcampSession.create({
+      data: {
+        chapterId,
+        title,
+        type,
+        isPreview: isPreview || false,
+        orderIndex: count
+      }
+    })
+    res.json({ success: true, data: session })
+  } catch (err) { next(err) }
+})
+
+// ── PUT /admin/bootcamps/:id/chapters/reorder ────────────────
+adminRouter.put('/bootcamps/:id/chapters/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { chapters } = req.body
+    // chapters: { id: string, order: number }[]
+    // Wait, the payload might contain sessions too? The frontend sends:
+    // const payload = newArr.map((c, i) => ({ id: c.id, order: i }))
+    
+    await prisma.$transaction(
+      chapters.map((ch: any) =>
+        prisma.bootcampChapter.update({
+          where: { id: ch.id },
+          data: { orderIndex: ch.order }
+        })
+      )
+    )
+    res.json({ success: true })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/bootcamps/:id/featured ────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/bootcamps/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
