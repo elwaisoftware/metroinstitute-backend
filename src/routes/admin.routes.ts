@@ -831,8 +831,8 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
         isPublished = true
         batchStatus = 'COMING_SOON'
         const now = new Date()
-        const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : bootcamp.registrationStartDate
-        const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : bootcamp.registrationDeadline
+        const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null
+        const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null
         if (openAt && now >= openAt) batchStatus = 'OPEN'
         if (closeAt && now >= closeAt) batchStatus = 'CLOSED'
       }
