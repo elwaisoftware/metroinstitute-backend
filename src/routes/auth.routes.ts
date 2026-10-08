@@ -221,11 +221,11 @@ authRouter.post('/resend-verify', async (req: Request, res: Response, next: Next
       data: { userId: user.id, code: newOtp, purpose: 'EMAIL_VERIFICATION', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     })
 
-    await sendEmail({
+    sendEmail({
       to: email,
       subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
       html: `<p>Kode OTP verifikasi email kamu: <strong style="font-size:24px;letter-spacing:4px">${newOtp}</strong></p><p>Berlaku 24 jam.</p>`,
-    })
+    }).catch(e => console.error('Background email failed:', e))
 
     res.json({ success: true, message: 'Kode OTP verifikasi baru telah dikirim' })
   } catch (err) { next(err) }
