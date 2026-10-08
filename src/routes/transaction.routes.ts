@@ -119,7 +119,7 @@ transactionRouter.get('/:orderId', async (req: AuthRequest, res: Response, next:
       where: { orderId: (req.params as Record<string, string>).orderId },
       select: {
         id: true, orderId: true, productType: true, title: true,
-        amount: true, status: true, snapToken: true, createdAt: true, paidAt: true,
+        amount: true, status: true, snapToken: true, createdAt: true, paidAt: true, userId: true,
       },
     })
     if (!tx) throw createError(404, 'Transaksi tidak ditemukan')
