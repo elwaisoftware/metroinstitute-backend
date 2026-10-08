@@ -60,6 +60,7 @@ enum SessionType {
   LIVE
   ASSIGNMENT
   QUIZ
+  MATERIAL
 }
 
 enum NotifType {
