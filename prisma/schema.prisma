@@ -232,6 +232,7 @@ model Bootcamp {
   tags                 String[]
   outcomes             String[]    // "Yang akan kamu pelajari"
   batchStatus          BatchStatus @default(COMING_SOON)
+  registrationStartDate DateTime?
   registrationDeadline DateTime?
   batchStartDate       DateTime?
   batchEndDate         DateTime?

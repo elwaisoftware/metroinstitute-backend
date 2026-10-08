@@ -24,12 +24,25 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
         id: true, title: true, shortDescription: true, field: true, level: true,
         price: true, thumbnailUrl: true, totalDuration: true, rating: true,
         reviewCount: true, enrollmentCount: true, batchStatus: true,
-        registrationDeadline: true, batchStartDate: true,
+        registrationStartDate: true, registrationDeadline: true, batchStartDate: true,
         mentorName: true, mentorPhotoUrl: true, tags: true,
         isPublished: true, isFeatured: true,
       },
     })
-    res.json({ success: true, data: bootcamps })
+    
+    const now = new Date()
+    const mappedBootcamps = bootcamps.map(b => {
+      let computedStatus = b.batchStatus
+      if (computedStatus === 'COMING_SOON' && b.registrationStartDate && now >= b.registrationStartDate) {
+        computedStatus = 'OPEN'
+      }
+      if (computedStatus === 'OPEN' && b.registrationDeadline && now >= b.registrationDeadline) {
+        computedStatus = 'CLOSED'
+      }
+      return { ...b, batchStatus: computedStatus }
+    })
+    
+    res.json({ success: true, data: mappedBootcamps })
   } catch (err) { next(err) }
 })
 
@@ -102,9 +115,19 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
       isWishlisted = !!wishlist
     }
 
+    let computedBatchStatus = bootcamp.batchStatus
+    const now = new Date()
+    if (computedBatchStatus === 'COMING_SOON' && bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate) {
+      computedBatchStatus = 'OPEN'
+    }
+    if (computedBatchStatus === 'OPEN' && bootcamp.registrationDeadline && now >= bootcamp.registrationDeadline) {
+      computedBatchStatus = 'CLOSED'
+    }
+
     // Normalize reviews to use consistent field name
     const normalized = {
       ...bootcamp,
+      batchStatus: computedBatchStatus,
       reviews: bootcamp.reviews.map((r) => ({ ...r, comment: r.content })),
       isEnrolled,
       isWishlisted,

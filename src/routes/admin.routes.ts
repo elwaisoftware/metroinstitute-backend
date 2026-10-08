@@ -716,9 +716,9 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
     let batchStatus = 'COMING_SOON'
 
     if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
-    if (data.status === 'OPEN') { isPublished = true; batchStatus = 'REGISTRATION_OPEN' }
+    if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
     if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
-    if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'COMPLETED' }
+    if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'CLOSED' }
 
     const bootcamp = await prisma.bootcamp.create({
       data: {
@@ -726,6 +726,7 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
         description: data.description,
         field: data.fields[0] || 'UI_UX', // DB only supports single field
         price: data.price,
+        registrationStartDate: data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null,
         registrationDeadline: data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null,
         batchStartDate: data.startDate ? new Date(data.startDate) : null,
         batchEndDate: data.endDate ? new Date(data.endDate) : null,
@@ -754,6 +755,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       else {
         where.isPublished = true
         if (status === 'PUBLISHED') where.batchStatus = 'COMING_SOON' // Mapping standard
+        else if (status === 'COMPLETED') where.batchStatus = 'CLOSED'
         else where.batchStatus = status
       }
     }
@@ -775,13 +777,14 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       let mappedStatus = item.batchStatus
       if (!item.isPublished) mappedStatus = 'DRAFT'
       else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+      else if (item.batchStatus === 'CLOSED') mappedStatus = 'COMPLETED'
 
       return {
         ...item,
         name: item.title,
         fields: item.field ? [item.field] : [],
         status: mappedStatus,
-        purchaseOpenAt: item.createdAt,
+        purchaseOpenAt: item.registrationStartDate,
         purchaseCloseAt: item.registrationDeadline,
         startDate: item.batchStartDate,
         endDate: item.batchEndDate,
@@ -812,9 +815,9 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.status) {
       if (data.status === 'DRAFT') { isPublished = false }
       if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
-      if (data.status === 'OPEN') { isPublished = true; batchStatus = 'REGISTRATION_OPEN' }
+      if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
       if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
-      if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'COMPLETED' }
+      if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'CLOSED' }
     }
 
     const updateData: any = {}
@@ -822,6 +825,7 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.description !== undefined) updateData.description = data.description
     if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
     if (data.price !== undefined) updateData.price = data.price
+    if (data.purchaseOpenAt) updateData.registrationStartDate = new Date(data.purchaseOpenAt)
     if (data.purchaseCloseAt) updateData.registrationDeadline = new Date(data.purchaseCloseAt)
     if (data.startDate) updateData.batchStartDate = new Date(data.startDate)
     if (data.endDate) updateData.batchEndDate = new Date(data.endDate)
