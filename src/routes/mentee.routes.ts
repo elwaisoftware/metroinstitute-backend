@@ -52,7 +52,7 @@ menteeRouter.post('/bootcamps/:bootcampId/sessions/:sessionId/assignments', auth
 
     // Check if session is a challenge
     const session = await prisma.bootcampSession.findUnique({ where: { id: sessionId } })
-    if (!session || session.type !== 'CHALLENGE') {
+    if (!session || session.type !== 'ASSIGNMENT') {
       throw createError(400, 'Sesi ini bukan merupakan tugas/challenge.')
     }
 

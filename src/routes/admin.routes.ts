@@ -1106,7 +1106,7 @@ adminRouter.get('/assignments', async (req: AuthRequest, res: Response, next: Ne
     const assignments = await prisma.assignment.findMany({
       include: {
         user: { select: { name: true, email: true } },
-        bootcampSession: { select: { title: true, bootcampId: true, type: true } },
+        bootcampSession: { select: { title: true, chapterId: true, type: true } },
       },
       orderBy: { submittedAt: 'desc' }
     });
