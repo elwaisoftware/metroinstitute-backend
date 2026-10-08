@@ -969,7 +969,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
     if (type === 'LIVE' && scheduledAt) {
       try {
         const enrollments = await prisma.bootcampEnrollment.findMany({
-          where: { bootcampId, status: 'ACTIVE' },
+          where: { bootcampId, isActive: true },
           include: { user: true }
         });
         const phones = enrollments.map(e => e.user.phone).filter(p => !!p) as string[];

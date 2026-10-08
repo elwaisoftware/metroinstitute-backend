@@ -49,7 +49,7 @@ export const startCronJobs = () => {
         
         // Dapatkan semua mentee yang enroll di bootcamp ini
         const enrollments = await prisma.bootcampEnrollment.findMany({
-          where: { bootcampId: bootcamp.id, status: 'ACTIVE' },
+          where: { bootcampId: bootcamp.id, isActive: true },
           include: {
             user: true
           }
