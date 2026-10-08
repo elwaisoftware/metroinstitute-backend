@@ -715,10 +715,9 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
     let isPublished = false
     let batchStatus = 'COMING_SOON'
 
-    if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
+    if (data.status === 'DRAFT') { isPublished = false }
     if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
-    if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
-    if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'CLOSED' }
+    if (data.status === 'CLOSED') { isPublished = true; batchStatus = 'CLOSED' }
 
     const bootcamp = await prisma.bootcamp.create({
       data: {
@@ -754,9 +753,8 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       if (status === 'DRAFT') where.isPublished = false
       else {
         where.isPublished = true
-        if (status === 'PUBLISHED') where.batchStatus = 'COMING_SOON' // Mapping standard
-        else if (status === 'COMPLETED') where.batchStatus = 'CLOSED'
-        else where.batchStatus = status
+        if (status === 'CLOSED') where.batchStatus = 'CLOSED'
+        else if (status === 'OPEN') where.batchStatus = 'OPEN'
       }
     }
 
@@ -776,8 +774,9 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
     const mappedItems = items.map((item: any) => {
       let mappedStatus = item.batchStatus
       if (!item.isPublished) mappedStatus = 'DRAFT'
-      else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
-      else if (item.batchStatus === 'CLOSED') mappedStatus = 'COMPLETED'
+      else if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+      else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+      else mappedStatus = item.batchStatus
 
       return {
         ...item,
@@ -814,10 +813,8 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
 
     if (data.status) {
       if (data.status === 'DRAFT') { isPublished = false }
-      if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
       if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
-      if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
-      if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'CLOSED' }
+      if (data.status === 'CLOSED') { isPublished = true; batchStatus = 'CLOSED' }
     }
 
     const updateData: any = {}
