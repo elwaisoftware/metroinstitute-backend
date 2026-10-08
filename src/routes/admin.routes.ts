@@ -923,6 +923,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
     const { id: bootcampId, chapterId } = req.params as Record<string, string>
     const { 
       title, 
+      description,
       type, 
       isPreview, 
       videoUrl, 
