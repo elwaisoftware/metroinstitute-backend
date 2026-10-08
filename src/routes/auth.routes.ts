@@ -89,10 +89,30 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
       to: user.email,
       subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
       html: `
-        <h2>Hei, ${user.name}! 👋</h2>
-        <p>Masukkan kode OTP berikut di aplikasi untuk memverifikasi email kamu:</p>
-        <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f0fdf4;padding:16px 24px;border-radius:8px;display:inline-block;color:#018556">${verifyOtp}</div>
-        <p>Kode berlaku 24 jam. Jika kamu tidak mendaftar, abaikan email ini.</p>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
+          <div style="text-align: center; margin-bottom: 32px;">
+            <h1 style="font-size: 24px; font-weight: 700; color: #111827; margin: 0;">Metro Institute</h1>
+          </div>
+          <div style="background-color: #fafafa; border: 1px solid #eaeaea; border-radius: 12px; padding: 40px 32px; text-align: center;">
+            <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 16px;">Verifikasi Email Kamu</h2>
+            <p style="font-size: 16px; line-height: 24px; color: #4b5563; margin-top: 0; margin-bottom: 32px;">
+              Halo <strong>${user.name}</strong>,<br>
+              Gunakan kode OTP berikut untuk menyelesaikan proses pendaftaran.
+            </p>
+            <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px 20px 20px 32px; margin-bottom: 32px; display: inline-block;">
+              <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${verifyOtp}</span>
+            </div>
+            <p style="font-size: 14px; color: #6b7280; margin: 0;">
+              Kode ini berlaku selama 24 jam.<br>
+              Jika kamu tidak merasa mendaftar di Metro Institute, silakan abaikan email ini.
+            </p>
+          </div>
+          <div style="text-align: center; margin-top: 32px;">
+            <p style="font-size: 12px; color: #9ca3af; margin: 0;">
+              &copy; ${new Date().getFullYear()} Metro Institute. All rights reserved.
+            </p>
+          </div>
+        </div>
       `,
     }).catch(e => console.error('Background email failed:', e))
 
@@ -224,7 +244,32 @@ authRouter.post('/resend-verify', async (req: Request, res: Response, next: Next
     sendEmail({
       to: email,
       subject: '✅ Kode OTP Verifikasi Email - Metro Institute',
-      html: `<p>Kode OTP verifikasi email kamu: <strong style="font-size:24px;letter-spacing:4px">${newOtp}</strong></p><p>Berlaku 24 jam.</p>`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
+          <div style="text-align: center; margin-bottom: 32px;">
+            <h1 style="font-size: 24px; font-weight: 700; color: #111827; margin: 0;">Metro Institute</h1>
+          </div>
+          <div style="background-color: #fafafa; border: 1px solid #eaeaea; border-radius: 12px; padding: 40px 32px; text-align: center;">
+            <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 16px;">Verifikasi Email Kamu</h2>
+            <p style="font-size: 16px; line-height: 24px; color: #4b5563; margin-top: 0; margin-bottom: 32px;">
+              Halo <strong>${user.name}</strong>,<br>
+              Gunakan kode OTP berikut untuk memverifikasi email kamu.
+            </p>
+            <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px 20px 20px 32px; margin-bottom: 32px; display: inline-block;">
+              <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${newOtp}</span>
+            </div>
+            <p style="font-size: 14px; color: #6b7280; margin: 0;">
+              Kode ini berlaku selama 24 jam.<br>
+              Jika kamu tidak meminta kode verifikasi ini, silakan abaikan email ini.
+            </p>
+          </div>
+          <div style="text-align: center; margin-top: 32px;">
+            <p style="font-size: 12px; color: #9ca3af; margin: 0;">
+              &copy; ${new Date().getFullYear()} Metro Institute. All rights reserved.
+            </p>
+          </div>
+        </div>
+      `,
     }).catch(e => console.error('Background email failed:', e))
 
     res.json({ success: true, message: 'Kode OTP verifikasi baru telah dikirim' })
@@ -248,10 +293,30 @@ authRouter.post('/forgot-password', async (req: Request, res: Response, next: Ne
         to: email,
         subject: '🔐 Kode OTP Reset Password - Metro Institute',
         html: `
-          <h2>Reset Password</h2>
-          <p>Masukkan kode OTP berikut di aplikasi untuk mereset password kamu:</p>
-          <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f0fdf4;padding:16px 24px;border-radius:8px;display:inline-block;color:#018556">${otp}</div>
-          <p>Kode berlaku 1 jam. Jika kamu tidak meminta reset password, abaikan email ini.</p>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; color: #333333;">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <h1 style="font-size: 24px; font-weight: 700; color: #111827; margin: 0;">Metro Institute</h1>
+            </div>
+            <div style="background-color: #fafafa; border: 1px solid #eaeaea; border-radius: 12px; padding: 40px 32px; text-align: center;">
+              <h2 style="font-size: 20px; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 16px;">Reset Password</h2>
+              <p style="font-size: 16px; line-height: 24px; color: #4b5563; margin-top: 0; margin-bottom: 32px;">
+                Halo <strong>${user.name}</strong>,<br>
+                Gunakan kode OTP berikut untuk mengatur ulang password kamu.
+              </p>
+              <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px 20px 20px 32px; margin-bottom: 32px; display: inline-block;">
+                <span style="font-size: 32px; font-weight: 700; letter-spacing: 12px; color: #059669;">${otp}</span>
+              </div>
+              <p style="font-size: 14px; color: #6b7280; margin: 0;">
+                Kode ini berlaku selama 1 jam.<br>
+                Jika kamu tidak meminta reset password, silakan abaikan email ini dan pastikan akun kamu aman.
+              </p>
+            </div>
+            <div style="text-align: center; margin-top: 32px;">
+              <p style="font-size: 12px; color: #9ca3af; margin: 0;">
+                &copy; ${new Date().getFullYear()} Metro Institute. All rights reserved.
+              </p>
+            </div>
+          </div>
         `,
       })
     }
