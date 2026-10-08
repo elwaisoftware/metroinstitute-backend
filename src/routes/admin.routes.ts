@@ -775,6 +775,19 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err) }
 })
 
+// ── GET /admin/bootcamps/:id ─────────────────────────────────
+adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const bootcamp = await prisma.bootcamp.findUnique({
+      where: { id }
+    })
+    
+    if (!bootcamp) return next(createError(404, 'Bootcamp tidak ditemukan'))
+    res.json({ success: true, data: bootcamp })
+  } catch (err) { next(err) }
+})
+
 // ── GET /admin/bootcamps/:id/chapters ────────────────────────
 adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
