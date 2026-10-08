@@ -929,7 +929,11 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
       liveUrl, 
       materialUrl, 
       assignmentDescription, 
-      assignmentDeadline 
+      assignmentDeadline,
+      scheduledAt,
+      durationMin,
+      attendanceWindowMin,
+      meetingUrl
     } = req.body
     
     const count = await prisma.bootcampSession.count({ where: { chapterId } })
@@ -940,11 +944,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
       parsedDeadline = new Date(assignmentDeadline)
     }
 
-    // Auto-generate Jitsi link if type is LIVE
-    let finalLiveUrl = liveUrl
-    if (type === 'LIVE') {
-      finalLiveUrl = `jitsi:metro-${bootcampId}-${Date.now()}`
-    }
+    let finalLiveUrl = meetingUrl || liveUrl;
 
     const session = await prisma.bootcampSession.create({
       data: {
@@ -954,6 +954,9 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
         isFreePreview: isPreview || false,
         videoUrl,
         liveUrl: finalLiveUrl,
+        liveScheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        videoDuration: durationMin,
+        attendanceWindowMin,
         // Since schema uses Json for materials, let's store materialUrl there if needed,
         materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
         assignmentDescription,
@@ -961,6 +964,37 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
         orderIndex: count
       }
     })
+
+    // If it's a live session, broadcast to mentees
+    if (type === 'LIVE' && scheduledAt) {
+      try {
+        const enrollments = await prisma.bootcampEnrollment.findMany({
+          where: { bootcampId, status: 'ACTIVE' },
+          include: { user: true }
+        });
+        const phones = enrollments.map(e => e.user.phone).filter(p => !!p) as string[];
+        
+        if (phones.length > 0) {
+          const bootcamp = await prisma.bootcamp.findUnique({ where: { id: bootcampId } });
+          const timeFormat = new Date(scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+          const platformLink = `${process.env.FRONTEND_URL || 'https://metroinstitute.site'}/mentee/bootcamp/${bootcampId}/live/${session.id}`;
+          
+          let message = `*JADWAL LIVE CLASS BARU! 🚀*\n\nHalo Mentee,\nJadwal Live Session baru untuk Bootcamp *${bootcamp?.title}* telah ditambahkan.\n\n*Topik:* ${title}\n*Waktu:* ${timeFormat} WIB\n\n`;
+          if (finalLiveUrl) {
+            message += `Silakan klik link berikut untuk bergabung ke meeting:\n🔗 ${finalLiveUrl}\n\n`;
+          }
+          message += `Atau Anda juga dapat bergabung melalui platform kami:\n🔗 ${platformLink}\n\n_Salam hangat,_ \n_Metro Institute_`;
+          
+          import('../services/whatsapp.service').then(({ WhatsAppService }) => {
+            WhatsAppService.sendBroadcast(phones, message);
+          });
+        }
+      } catch (broadcastErr) {
+        // Silently fail broadcast so it doesn't break creation
+        console.error('Failed to send schedule creation broadcast', broadcastErr);
+      }
+    }
+
     res.json({ success: true, data: session })
   } catch (err) { next(err) }
 })
@@ -1215,7 +1249,6 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
     if (scheduledAt) parsedScheduledAt = new Date(scheduledAt);
 
     let finalLiveUrl = liveUrl || meetingUrl;
-    if (type === 'LIVE' && !finalLiveUrl) finalLiveUrl = `jitsi:metro-${bootcampId}-${Date.now()}`;
 
     const updated = await prisma.bootcampSession.update({
       where: { id: sessionId },
