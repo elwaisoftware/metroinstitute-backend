@@ -1187,6 +1187,21 @@ adminRouter.delete('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest
   } catch (err) { next(err) }
 });
 
+// ── GET /admin/bootcamps/:id/sessions/:sessionId ──────────────
+adminRouter.get('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params as Record<string, string>;
+    const session = await prisma.bootcampSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        _count: { select: { attendances: true } }
+      }
+    });
+    if (!session) return next(createError(404, 'Sesi tidak ditemukan'));
+    res.json({ success: true, data: session });
+  } catch (err) { next(err) }
+});
+
 // ── PUT /admin/bootcamps/:id/sessions/:sessionId ──────────────
 adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
