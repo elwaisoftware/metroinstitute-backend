@@ -718,6 +718,15 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
     if (data.status === 'DRAFT') { isPublished = false }
     if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
     if (data.status === 'CLOSED') { isPublished = true; batchStatus = 'CLOSED' }
+    if (data.status === 'PUBLISHED') {
+      isPublished = true
+      batchStatus = 'COMING_SOON'
+      const now = new Date()
+      const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null
+      const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null
+      if (openAt && now >= openAt) batchStatus = 'OPEN'
+      if (closeAt && now >= closeAt) batchStatus = 'CLOSED'
+    }
 
     const bootcamp = await prisma.bootcamp.create({
       data: {
@@ -755,6 +764,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         where.isPublished = true
         if (status === 'CLOSED') where.batchStatus = 'CLOSED'
         else if (status === 'OPEN') where.batchStatus = 'OPEN'
+        else if (status === 'PUBLISHED') where.batchStatus = 'COMING_SOON'
       }
     }
 
@@ -776,6 +786,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       if (item.isPublished) {
         if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
         else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+        else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
         else mappedStatus = 'DRAFT' // Fallback for legacy statuses
       }
 
@@ -816,6 +827,15 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
       if (data.status === 'DRAFT') { isPublished = false }
       if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
       if (data.status === 'CLOSED') { isPublished = true; batchStatus = 'CLOSED' }
+      if (data.status === 'PUBLISHED') {
+        isPublished = true
+        batchStatus = 'COMING_SOON'
+        const now = new Date()
+        const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : bootcamp.registrationStartDate
+        const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : bootcamp.registrationDeadline
+        if (openAt && now >= openAt) batchStatus = 'OPEN'
+        if (closeAt && now >= closeAt) batchStatus = 'CLOSED'
+      }
     }
 
     const updateData: any = {}
@@ -854,6 +874,7 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
     if (bootcamp.isPublished) {
       if (bootcamp.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
       else if (bootcamp.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+      else if (bootcamp.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
     }
 
     res.json({ success: true, data: { ...bootcamp, status: mappedStatus } })
