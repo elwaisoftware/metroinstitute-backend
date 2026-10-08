@@ -24,6 +24,7 @@ import { leadRouter } from './routes/lead.routes'
 import { adminRouter } from './routes/admin.routes'
 import { voucherRouter } from './routes/voucher.routes'
 import { menteeRouter } from './routes/mentee.routes'
+import { startCronJobs } from './utils/cron'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -116,6 +117,8 @@ app.use((req: import('express').Request, res: import('express').Response) => {
 app.use(errorHandler)
 
 // ── Start ──────────────────────────────────────────────────
+startCronJobs()
+
 app.listen(PORT, () => {
   logger.info(`Metro Institute Backend berjalan di http://localhost:${PORT}`)
   logger.info(`Environment: ${process.env.NODE_ENV}`)
