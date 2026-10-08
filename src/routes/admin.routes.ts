@@ -1099,3 +1099,46 @@ adminRouter.post('/broadcast-wa', async (req, res, next) => {
     res.json({ success: true, message: `Broadcast berhasil dikirim ke ${phones.length} nomor.` });
   } catch (err) { next(err) }
 });
+
+// ── GET /admin/assignments ─────────────────────────────────
+adminRouter.get('/assignments', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const assignments = await prisma.assignment.findMany({
+      include: {
+        user: { select: { name: true, email: true } },
+        bootcampSession: { select: { title: true, bootcampId: true, type: true } },
+      },
+      orderBy: { submittedAt: 'desc' }
+    });
+    res.json({ success: true, data: assignments });
+  } catch (err) { next(err) }
+});
+
+// ── POST /admin/assignments/:id/grade ──────────────────────
+adminRouter.post('/assignments/:id/grade', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>;
+    const { score, feedback, xpAwarded } = req.body;
+
+    if (score === undefined || score < 0 || score > 100) {
+      throw createError(400, 'Skor harus diantara 0 dan 100');
+    }
+
+    const assignment = await prisma.assignment.findUnique({ where: { id } });
+    if (!assignment) throw createError(404, 'Tugas tidak ditemukan');
+
+    const updated = await prisma.assignment.update({
+      where: { id },
+      data: {
+        score: parseInt(score),
+        feedback,
+        xpAwarded: xpAwarded ? parseInt(xpAwarded) : undefined,
+        gradedAt: new Date()
+      }
+    });
+
+    // Option to trigger notification or XP update here
+    
+    res.json({ success: true, data: updated, message: 'Tugas berhasil dinilai.' });
+  } catch (err) { next(err) }
+});

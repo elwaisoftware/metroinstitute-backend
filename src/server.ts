@@ -23,6 +23,7 @@ import { homepageRouter } from './routes/homepage.routes'
 import { leadRouter } from './routes/lead.routes'
 import { adminRouter } from './routes/admin.routes'
 import { voucherRouter } from './routes/voucher.routes'
+import { menteeRouter } from './routes/mentee.routes'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -104,6 +105,7 @@ app.use(`${PREFIX}/homepage`, homepageRouter)
 app.use(`${PREFIX}/leads`, leadRouter)
 app.use(`${PREFIX}/admin`, adminRouter)
 app.use(`${PREFIX}/voucher`, voucherRouter)
+app.use(`${PREFIX}/mentee`, menteeRouter)
 
 // ── 404 ────────────────────────────────────────────────────
 app.use((req: import('express').Request, res: import('express').Response) => {
