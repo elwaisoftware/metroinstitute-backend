@@ -1142,3 +1142,46 @@ adminRouter.post('/assignments/:id/grade', async (req: AuthRequest, res: Respons
     res.json({ success: true, data: updated, message: 'Tugas berhasil dinilai.' });
   } catch (err) { next(err) }
 });
+
+// ── DELETE /admin/bootcamps/:id/chapters/:chapterId ──────────
+adminRouter.delete('/bootcamps/:id/chapters/:chapterId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { chapterId } = req.params as Record<string, string>;
+    await prisma.bootcampChapter.delete({ where: { id: chapterId } });
+    res.json({ success: true, message: 'Bab berhasil dihapus' });
+  } catch (err) { next(err) }
+});
+
+// ── DELETE /admin/bootcamps/:id/sessions/:sessionId ──────────
+adminRouter.delete('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params as Record<string, string>;
+    await prisma.bootcampSession.delete({ where: { id: sessionId } });
+    res.json({ success: true, message: 'Materi berhasil dihapus' });
+  } catch (err) { next(err) }
+});
+
+// ── PUT /admin/bootcamps/:id/sessions/:sessionId ──────────────
+adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id: bootcampId, sessionId } = req.params as Record<string, string>;
+    const { title, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline } = req.body;
+
+    let parsedDeadline = null;
+    if (assignmentDeadline) parsedDeadline = new Date(assignmentDeadline);
+
+    let finalLiveUrl = liveUrl;
+    if (type === 'LIVE' && !finalLiveUrl) finalLiveUrl = `jitsi:metro-${bootcampId}-${Date.now()}`;
+
+    const updated = await prisma.bootcampSession.update({
+      where: { id: sessionId },
+      data: {
+        title, type, isFreePreview: isPreview || false,
+        videoUrl, liveUrl: finalLiveUrl,
+        materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
+        assignmentDescription, assignmentDeadline: parsedDeadline
+      }
+    });
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err) }
+});
