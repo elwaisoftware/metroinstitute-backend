@@ -706,6 +706,75 @@ adminRouter.post('/upload', upload.single('file'), async (req: AuthRequest, res:
   } catch (err) { next(err) }
 })
 
+// ── POST /admin/bootcamps ────────────────────────────────────
+adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // Frontend sends: name, description, fields[], price, purchaseOpenAt, purchaseCloseAt, startDate, endDate, status, certificateTemplateId
+    const data = req.body
+    
+    let isPublished = false
+    let batchStatus = 'COMING_SOON'
+
+    if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
+    if (data.status === 'OPEN') { isPublished = true; batchStatus = 'REGISTRATION_OPEN' }
+    if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
+    if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'COMPLETED' }
+
+    const bootcamp = await prisma.bootcamp.create({
+      data: {
+        title: data.name,
+        description: data.description,
+        field: data.fields[0] || 'UI_UX', // DB only supports single field
+        price: data.price,
+        registrationDeadline: data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null,
+        batchStartDate: data.startDate ? new Date(data.startDate) : null,
+        batchEndDate: data.endDate ? new Date(data.endDate) : null,
+        isPublished,
+        batchStatus: batchStatus as any,
+        certificateTemplateId: data.certificateTemplateId || null
+      }
+    })
+    res.json({ success: true, data: bootcamp })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/bootcamps/:id ───────────────────────────────
+adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = req.body
+
+    let isPublished = undefined
+    let batchStatus = undefined
+
+    if (data.status) {
+      if (data.status === 'DRAFT') { isPublished = false }
+      if (data.status === 'PUBLISHED') { isPublished = true; batchStatus = 'COMING_SOON' }
+      if (data.status === 'OPEN') { isPublished = true; batchStatus = 'REGISTRATION_OPEN' }
+      if (data.status === 'ONGOING') { isPublished = true; batchStatus = 'ONGOING' }
+      if (data.status === 'COMPLETED') { isPublished = true; batchStatus = 'COMPLETED' }
+    }
+
+    const updateData: any = {}
+    if (data.name) updateData.title = data.name
+    if (data.description) updateData.description = data.description
+    if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
+    if (data.price !== undefined) updateData.price = data.price
+    if (data.purchaseCloseAt) updateData.registrationDeadline = new Date(data.purchaseCloseAt)
+    if (data.startDate) updateData.batchStartDate = new Date(data.startDate)
+    if (data.endDate) updateData.batchEndDate = new Date(data.endDate)
+    if (isPublished !== undefined) updateData.isPublished = isPublished
+    if (batchStatus !== undefined) updateData.batchStatus = batchStatus as any
+    if (data.certificateTemplateId !== undefined) updateData.certificateTemplateId = data.certificateTemplateId || null
+
+    const bootcamp = await prisma.bootcamp.update({
+      where: { id },
+      data: updateData
+    })
+    res.json({ success: true, data: bootcamp })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/bootcamps/:id/featured ────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/bootcamps/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
