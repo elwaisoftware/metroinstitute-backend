@@ -770,10 +770,23 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       })
     ])
 
-    const mappedItems = items.map((item: any) => ({
-      ...item,
-      _count: { registrations: item._count?.enrollments || 0 }
-    }))
+    const mappedItems = items.map((item: any) => {
+      let mappedStatus = item.batchStatus
+      if (!item.isPublished) mappedStatus = 'DRAFT'
+      else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+
+      return {
+        ...item,
+        name: item.title,
+        fields: item.field ? [item.field] : [],
+        status: mappedStatus,
+        purchaseOpenAt: item.createdAt,
+        purchaseCloseAt: item.registrationDeadline,
+        startDate: item.batchStartDate,
+        endDate: item.batchEndDate,
+        _count: { registrations: item._count?.enrollments || 0 }
+      }
+    })
 
     res.json({
       success: true,
