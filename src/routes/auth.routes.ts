@@ -54,7 +54,20 @@ authRouter.post('/register', async (req: Request, res: Response, next: NextFunct
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email: data.email }, { phone: data.phone }] },
     })
-    if (existing) throw createError(409, 'Email atau nomor WhatsApp sudah terdaftar')
+    
+    if (existing) {
+      if (existing.isEmailVerified) {
+        throw createError(409, 'Email atau nomor WhatsApp sudah terdaftar')
+      } else {
+        // Hapus data lama yang belum terverifikasi agar bisa ditimpa
+        await prisma.user.deleteMany({
+          where: {
+            OR: [{ email: data.email }, { phone: data.phone }],
+            isEmailVerified: false
+          }
+        })
+      }
+    }
 
     const passwordHash = await bcrypt.hash(data.password, 12)
     const user = await prisma.user.create({
@@ -97,11 +110,11 @@ authRouter.post('/login', async (req: Request, res: Response, next: NextFunction
     const { email, password } = schema.parse(req.body)
 
     const user = await prisma.user.findUnique({ where: { email } })
-    if (!user || !user.passwordHash) throw createError(401, 'Email atau password salah')
+    if (!user || !user.passwordHash) throw createError(401, 'Username atau Password Salah')
     if (user.isSuspended) throw createError(403, 'Akun ini telah disuspend')
 
     const isValid = await bcrypt.compare(password, user.passwordHash)
-    if (!isValid) throw createError(401, 'Email atau password salah')
+    if (!isValid) throw createError(401, 'Username atau Password Salah')
 
     // Update streak
     await updateStreak(user.id)
