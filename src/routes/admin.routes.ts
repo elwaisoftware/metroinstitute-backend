@@ -895,15 +895,39 @@ adminRouter.post('/bootcamps/:id/chapters', async (req: AuthRequest, res: Respon
 adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { chapterId } = req.params as Record<string, string>
-    const { title, type, isPreview } = req.body
+    const { 
+      title, 
+      type, 
+      isPreview, 
+      videoUrl, 
+      liveUrl, 
+      materialUrl, 
+      assignmentDescription, 
+      assignmentDeadline 
+    } = req.body
     
     const count = await prisma.bootcampSession.count({ where: { chapterId } })
+    
+    // Parse deadline if provided
+    let parsedDeadline = null
+    if (assignmentDeadline) {
+      parsedDeadline = new Date(assignmentDeadline)
+    }
+
     const session = await prisma.bootcampSession.create({
       data: {
         chapterId,
         title,
         type,
         isFreePreview: isPreview || false,
+        videoUrl,
+        liveUrl,
+        // Since schema uses Json for materials, let's store materialUrl there if needed,
+        // but wait, Prisma Schema has materials as Json?
+        // Let's store materialUrl in materials array
+        materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
+        assignmentDescription,
+        assignmentDeadline: parsedDeadline,
         orderIndex: count
       }
     })
