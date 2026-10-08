@@ -778,8 +778,9 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
 // ── GET /admin/bootcamps/:id/chapters ────────────────────────
 adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const { id } = req.params as Record<string, string>
     const chapters = await prisma.bootcampChapter.findMany({
-      where: { bootcampId: req.params.id },
+      where: { bootcampId: id },
       orderBy: { orderIndex: 'asc' },
       include: {
         sessions: {
@@ -789,10 +790,10 @@ adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Respons
     })
     
     // Map orderIndex -> order for frontend compatibility
-    const mappedChapters = chapters.map(ch => ({
+    const mappedChapters = chapters.map((ch: any) => ({
       ...ch,
       order: ch.orderIndex,
-      sessions: ch.sessions.map(s => ({ ...s, order: s.orderIndex }))
+      sessions: ch.sessions.map((s: any) => ({ ...s, order: s.orderIndex }))
     }))
     
     res.json({ success: true, data: mappedChapters })
@@ -802,12 +803,13 @@ adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Respons
 // ── POST /admin/bootcamps/:id/chapters ───────────────────────
 adminRouter.post('/bootcamps/:id/chapters', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const { id } = req.params as Record<string, string>
     const { title } = req.body
     
-    const count = await prisma.bootcampChapter.count({ where: { bootcampId: req.params.id } })
+    const count = await prisma.bootcampChapter.count({ where: { bootcampId: id } })
     const chapter = await prisma.bootcampChapter.create({
       data: {
-        bootcampId: req.params.id,
+        bootcampId: id,
         title,
         orderIndex: count
       }
@@ -819,7 +821,7 @@ adminRouter.post('/bootcamps/:id/chapters', async (req: AuthRequest, res: Respon
 // ── POST /admin/bootcamps/:id/chapters/:chapterId/sessions ───
 adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { chapterId } = req.params
+    const { chapterId } = req.params as Record<string, string>
     const { title, type, isPreview } = req.body
     
     const count = await prisma.bootcampSession.count({ where: { chapterId } })
@@ -828,7 +830,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
         chapterId,
         title,
         type,
-        isPreview: isPreview || false,
+        isFreePreview: isPreview || false,
         orderIndex: count
       }
     })
