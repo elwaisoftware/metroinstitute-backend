@@ -738,6 +738,48 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
   } catch (err) { next(err) }
 })
 
+// ── GET /admin/bootcamps ─────────────────────────────────────
+adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { search, field, status, page = '1', limit = '10' } = req.query as Record<string, string>
+    const p = parseInt(page, 10)
+    const l = parseInt(limit, 10)
+
+    const where: any = {}
+    if (search) where.title = { contains: search, mode: 'insensitive' }
+    if (field) where.field = field
+    if (status) {
+      if (status === 'DRAFT') where.isPublished = false
+      else {
+        where.isPublished = true
+        if (status === 'PUBLISHED') where.batchStatus = 'COMING_SOON' // Mapping standard
+        else where.batchStatus = status
+      }
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.bootcamp.count({ where }),
+      prisma.bootcamp.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (p - 1) * l,
+        take: l,
+        include: {
+          _count: { select: { registrations: true } }
+        }
+      })
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        pagination: { total, page: p, limit: l, totalPages: Math.ceil(total / l) }
+      }
+    })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/bootcamps/:id ───────────────────────────────
 adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
