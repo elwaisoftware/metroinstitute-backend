@@ -276,6 +276,7 @@ model BootcampSession {
   id              String      @id @default(cuid())
   chapterId       String
   title           String
+  description     String?     @db.Text
   type            SessionType
   videoUrl        String?
   videoDuration   Int?        // seconds
@@ -388,6 +389,7 @@ model CourseSession {
   id              String      @id @default(cuid())
   chapterId       String
   title           String
+  description     String?     @db.Text
   type            SessionType
   videoUrl        String?
   videoDuration   Int?        // seconds

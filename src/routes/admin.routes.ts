@@ -819,7 +819,7 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
 
     const updateData: any = {}
     if (data.name) updateData.title = data.name
-    if (data.description) updateData.description = data.description
+    if (data.description !== undefined) updateData.description = data.description
     if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
     if (data.price !== undefined) updateData.price = data.price
     if (data.purchaseCloseAt) updateData.registrationDeadline = new Date(data.purchaseCloseAt)
@@ -950,6 +950,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
       data: {
         chapterId,
         title,
+          description,
         type,
         isFreePreview: isPreview || false,
         videoUrl,
@@ -1240,13 +1241,11 @@ adminRouter.get('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
 adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id: bootcampId, sessionId } = req.params as Record<string, string>;
-    const { title, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline, scheduledAt, durationMin, attendanceWindowMin, meetingUrl, recordingUrl } = req.body;
+    const { title, description, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline, scheduledAt, durationMin, attendanceWindowMin, meetingUrl, recordingUrl } = req.body;
 
-    let parsedDeadline = null;
-    if (assignmentDeadline) parsedDeadline = new Date(assignmentDeadline);
+    let parsedDeadline = assignmentDeadline === '' ? null : (assignmentDeadline ? new Date(assignmentDeadline) : undefined);
     
-    let parsedScheduledAt = undefined;
-    if (scheduledAt) parsedScheduledAt = new Date(scheduledAt);
+    let parsedScheduledAt = scheduledAt === '' ? null : (scheduledAt ? new Date(scheduledAt) : undefined);
 
     let finalLiveUrl = liveUrl || meetingUrl;
 
@@ -1254,14 +1253,15 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
       where: { id: sessionId },
       data: {
         title: title !== undefined ? title : undefined, 
+        description: description !== undefined ? description : undefined,
         type: type !== undefined ? type : undefined, 
         isFreePreview: isPreview !== undefined ? isPreview : undefined,
         videoUrl: recordingUrl !== undefined ? recordingUrl : (videoUrl !== undefined ? videoUrl : undefined), 
         liveUrl: finalLiveUrl !== undefined ? finalLiveUrl : undefined,
         materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
         assignmentDescription: assignmentDescription !== undefined ? assignmentDescription : undefined, 
-        assignmentDeadline: parsedDeadline !== null ? parsedDeadline : undefined,
-        liveScheduledAt: parsedScheduledAt,
+        assignmentDeadline: assignmentDeadline !== undefined ? parsedDeadline : undefined,
+        liveScheduledAt: scheduledAt !== undefined ? parsedScheduledAt : undefined,
         videoDuration: durationMin !== undefined ? durationMin : undefined,
         attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined
       }
