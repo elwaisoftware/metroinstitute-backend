@@ -65,6 +65,7 @@ bootcampRouter.get('/enrolled', authenticate, async (req: AuthRequest, res: Resp
       title:        e.bootcamp.title,
       field:        e.bootcamp.field,
       thumbnailUrl: e.bootcamp.thumbnailUrl,
+      startDate:    e.bootcamp.batchStartDate,
       progress:     Math.round(e.progress),
       type:         'bootcamp',
     }))
