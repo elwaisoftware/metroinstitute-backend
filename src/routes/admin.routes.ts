@@ -1002,7 +1002,8 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
         materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
         assignmentDescription,
         assignmentDeadline: parsedDeadline,
-        orderIndex: count
+        orderIndex: count,
+        quizOptions: req.body.quizOptions !== undefined ? req.body.quizOptions : undefined
       }
     })
 
@@ -1210,7 +1211,9 @@ adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response
         videoUrl: data.videoUrl || null,
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
         isFreePreview: data.isPreview || false,
-        orderIndex: newOrderIndex
+        orderIndex: newOrderIndex,
+        quizOptions: data.quizOptions !== undefined ? data.quizOptions : undefined,
+        assignmentDescription: data.assignmentDescription !== undefined ? data.assignmentDescription : undefined
       }
     })
     
@@ -1231,7 +1234,9 @@ adminRouter.put('/courses/sessions/:id', async (req: AuthRequest, res: Response,
         type: data.type,
         videoUrl: data.videoUrl || null,
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
-        isFreePreview: data.isPreview || false
+        isFreePreview: data.isPreview || false,
+        quizOptions: data.quizOptions !== undefined ? data.quizOptions : undefined,
+        assignmentDescription: data.assignmentDescription !== undefined ? data.assignmentDescription : undefined
       }
     })
     
@@ -1476,7 +1481,8 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
         assignmentDeadline: assignmentDeadline !== undefined ? parsedDeadline : undefined,
         liveScheduledAt: scheduledAt !== undefined ? parsedScheduledAt : undefined,
         videoDuration: durationMin !== undefined ? durationMin : undefined,
-        attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined
+        attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined,
+        quizOptions: req.body.quizOptions !== undefined ? req.body.quizOptions : undefined
       }
     });
     res.json({ success: true, data: updated });
