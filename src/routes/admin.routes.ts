@@ -1131,6 +1131,15 @@ adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: 
   } catch (err) { next(err) }
 })
 
+// ── DELETE /admin/courses/:id ────────────────────────────────────
+adminRouter.delete('/courses/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    await prisma.miniCourse.delete({ where: { id } })
+    res.json({ success: true, message: 'Mini course dihapus' })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/courses/:id/featured ─────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/courses/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
