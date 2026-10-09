@@ -1209,6 +1209,27 @@ adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response
   } catch (err) { next(err) }
 })
 
+// ── PUT /admin/courses/sessions/:id ──────────────────────────────
+adminRouter.put('/courses/sessions/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = req.body
+    
+    const session = await prisma.courseSession.update({
+      where: { id },
+      data: {
+        title: data.title,
+        type: data.type,
+        videoUrl: data.videoUrl || null,
+        materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
+        isFreePreview: data.isPreview || false
+      }
+    })
+    
+    res.json({ success: true, data: session })
+  } catch (err) { next(err) }
+})
+
 // ── DELETE /admin/courses/sessions/:id ───────────────────────────
 adminRouter.delete('/courses/sessions/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
