@@ -368,7 +368,7 @@ adminRouter.post('/broadcast', async (req: AuthRequest, res: Response, next: Nex
 
     const mentees = await prisma.user.findMany({
       where,
-      select: { id: true },
+      select: { id: true, phone: true },
     })
 
     if (mentees.length > 0) {
@@ -381,9 +381,16 @@ adminRouter.post('/broadcast', async (req: AuthRequest, res: Response, next: Nex
         })),
         skipDuplicates: true,
       })
+
+      // Kirim WhatsApp (jika nomor tersedia)
+      const phones = mentees.map(m => m.phone).filter(Boolean) as string[]
+      if (phones.length > 0) {
+        const waMessage = `*${title}*\n\n${body}`
+        await WhatsAppService.sendBroadcast(phones, waMessage).catch(console.error)
+      }
     }
 
-    res.json({ success: true, message: `Broadcast terkirim ke ${mentees.length} mentee` })
+    res.json({ success: true, message: `Broadcast In-App & WA terkirim ke ${mentees.length} mentee` })
   } catch (err) { next(err) }
 })
 
