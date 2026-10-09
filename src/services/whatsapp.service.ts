@@ -10,7 +10,7 @@ import { logger } from '../utils/logger';
  */
 export class WhatsAppService {
   private static API_URL = process.env.WA_API_URL || 'https://api.fonnte.com/send';
-  private static API_KEY = process.env.WA_API_KEY || '';
+  private static API_KEY = process.env.FONNTE_API_KEY || process.env.WA_API_KEY || '';
 
   /**
    * Mengirimkan 6 digit OTP ke nomor user
