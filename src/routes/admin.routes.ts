@@ -1082,6 +1082,55 @@ adminRouter.patch('/bootcamps/:id/featured', async (req: AuthRequest, res: Respo
   } catch (err) { next(err) }
 })
 
+// ── POST /admin/courses ────────────────────────────────────────
+adminRouter.post('/courses', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = req.body
+    
+    const course = await prisma.miniCourse.create({
+      data: {
+        title: data.title,
+        shortDescription: data.descShort,
+        description: data.descLong,
+        field: data.field,
+        level: 'BEGINNER', // Default since frontend doesn't send it yet
+        price: data.price,
+        accessDays: data.accessDays || 36500,
+        totalDuration: data.totalDuration,
+        isPublished: data.status === 'PUBLISHED',
+        certificateTemplateId: data.certificateTemplateId || null,
+        thumbnailUrl: data.thumbnailUrl || null
+      }
+    })
+    res.json({ success: true, data: course })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/courses/:id ─────────────────────────────────────
+adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = req.body
+    
+    const updated = await prisma.miniCourse.update({
+      where: { id },
+      data: {
+        title: data.title,
+        shortDescription: data.descShort,
+        description: data.descLong,
+        field: data.field,
+        price: data.price,
+        accessDays: data.accessDays || 36500,
+        totalDuration: data.totalDuration,
+        isPublished: data.status === 'PUBLISHED',
+        certificateTemplateId: data.certificateTemplateId || null,
+        thumbnailUrl: data.thumbnailUrl || null
+      }
+    })
+    res.json({ success: true, data: updated })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/courses/:id/featured ─────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/courses/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
