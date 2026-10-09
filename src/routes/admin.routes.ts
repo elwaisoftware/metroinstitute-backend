@@ -1583,3 +1583,47 @@ adminRouter.patch('/reviews/:id/visibility', async (req: AuthRequest, res: Respo
     res.json({ success: true, data: updated });
   } catch (err) { next(err) }
 });
+
+// ── GET /admin/certificates ─────────────────────────────────
+adminRouter.get('/certificates', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const productType = req.query.productType as string | undefined;
+
+    const where: any = {};
+    if (productType) where.productType = productType;
+
+    const [total, certs] = await Promise.all([
+      prisma.certificate.count({ where }),
+      prisma.certificate.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { issuedAt: 'desc' },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        }
+      })
+    ]);
+
+    const items = await Promise.all(certs.map(async c => {
+      let product = null;
+      if (c.courseId) {
+        product = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { id: true, title: true } });
+      } else if (c.bootcampId) {
+        product = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { id: true, title: true } });
+      }
+      return { ...c, product };
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+      }
+    });
+  } catch (err) { next(err) }
+});
+
