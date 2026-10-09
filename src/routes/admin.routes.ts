@@ -371,15 +371,17 @@ adminRouter.post('/broadcast', async (req: AuthRequest, res: Response, next: Nex
       select: { id: true },
     })
 
-    await prisma.notification.createMany({
-      data: mentees.map((m) => ({
-        userId: m.id,
-        type:   'SYSTEM_BROADCAST' as const,
-        title,
-        body,
-      })),
-      skipDuplicates: true,
-    })
+    if (mentees.length > 0) {
+      await prisma.notification.createMany({
+        data: mentees.map((m) => ({
+          userId: m.id,
+          type:   'SYSTEM_BROADCAST',
+          title,
+          body,
+        })),
+        skipDuplicates: true,
+      })
+    }
 
     res.json({ success: true, message: `Broadcast terkirim ke ${mentees.length} mentee` })
   } catch (err) { next(err) }
@@ -435,8 +437,8 @@ adminRouter.patch('/homepage-settings', async (req: AuthRequest, res: Response, 
   } catch (err) { next(err) }
 })
 
-// ── GET /admin/assignments ────────────────────────────────
-adminRouter.get('/assignments', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// ── GET /admin/project-submissions ────────────────────────────────
+adminRouter.get('/project-submissions', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { page = '1', limit = '10', search, status, field } = req.query as Record<string, string>
     const p = parseInt(page as string, 10) || 1
@@ -493,8 +495,8 @@ adminRouter.get('/assignments', async (req: AuthRequest, res: Response, next: Ne
   } catch (err) { next(err) }
 })
 
-// ── PATCH /admin/assignments/:id/grade ────────────────────
-adminRouter.patch('/assignments/:id/grade', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// ── PATCH /admin/project-submissions/:id/grade ────────────────────
+adminRouter.patch('/project-submissions/:id/grade', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { score, feedback } = z.object({
       score: z.number().min(0),
