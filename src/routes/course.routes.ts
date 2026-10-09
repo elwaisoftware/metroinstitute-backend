@@ -36,10 +36,10 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
       where,
       orderBy,
       select: {
-        id: true, title: true, shortDescription: true, field: true, level: true,
+        id: true, title: true, shortDescription: true, description: true, field: true, level: true,
         price: true, thumbnailUrl: true, totalDuration: true, rating: true,
         reviewCount: true, enrollmentCount: true, tags: true,
-        isPublished: true, isFeatured: true,
+        isPublished: true, isFeatured: true, certificateTemplateId: true, accessDays: true,
       },
     })
 
