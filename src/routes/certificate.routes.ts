@@ -19,10 +19,10 @@ certificateRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
         let course = null
         let bootcamp = null
         if (c.courseId) {
-          course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true } })
+          course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true } } } })
         }
         if (c.bootcampId) {
-          bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true } })
+          bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true } } } })
         }
         return { ...c, course, bootcamp }
       })
