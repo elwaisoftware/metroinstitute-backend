@@ -1200,7 +1200,7 @@ adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response
         type: data.type,
         videoUrl: data.videoUrl || null,
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
-        isPreview: data.isPreview || false,
+        isFreePreview: data.isPreview || false,
         orderIndex: newOrderIndex
       }
     })
