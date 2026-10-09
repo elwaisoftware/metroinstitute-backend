@@ -1482,3 +1482,104 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
     res.json({ success: true, data: updated });
   } catch (err) { next(err) }
 });
+
+// ── GET /admin/leads ────────────────────────────────────────
+adminRouter.get('/leads', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const search = (req.query.search as string) || '';
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    
+    const where = search ? {
+      OR: [
+        { name: { contains: search } },
+        { email: { contains: search } },
+      ]
+    } : {};
+    
+    const leads = await prisma.lead.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    
+    const total = await prisma.lead.count({ where });
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        items: leads, 
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } 
+      } 
+    });
+  } catch (err) { next(err) }
+});
+
+// ── GET /admin/leads/export ──────────────────────────────────
+adminRouter.get('/leads/export', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const leads = await prisma.lead.findMany({ orderBy: { createdAt: 'desc' } });
+    
+    let csv = 'Name,Email,Phone,Source,Date\n';
+    leads.forEach(l => {
+      csv += `"${l.name}","${l.email}","${l.phone || ''}","${l.source || ''}","${l.createdAt.toISOString()}"\n`;
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
+    res.send(csv);
+  } catch (err) { next(err) }
+});
+
+// ── GET /admin/reviews ───────────────────────────────────────
+adminRouter.get('/reviews', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const isVisible = req.query.isVisible as string; // 'true' | 'false'
+    const rating = req.query.rating ? parseInt(req.query.rating as string) : undefined;
+    
+    const where: any = {};
+    if (isVisible === 'true') where.isHidden = false;
+    if (isVisible === 'false') where.isHidden = true;
+    if (rating) where.rating = rating;
+    
+    const reviews = await prisma.review.findMany({
+      where,
+      include: {
+        user: { select: { name: true, email: true } },
+        bootcamp: { select: { title: true } },
+        course: { select: { title: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    
+    const total = await prisma.review.count({ where });
+
+    res.json({ 
+      success: true, 
+      data: { 
+        items: reviews, 
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } 
+      } 
+    });
+  } catch (err) { next(err) }
+});
+
+// ── PATCH /admin/reviews/:id/visibility ─────────────────────
+adminRouter.patch('/reviews/:id/visibility', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { isVisible } = req.body;
+    
+    const updated = await prisma.review.update({
+      where: { id: id as string },
+      data: { isHidden: !isVisible }
+    });
+    
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err) }
+});
