@@ -65,7 +65,7 @@ courseRouter.get('/enrolled', async (req: AuthRequest, res: Response, next: Next
       id:          e.course.id,
       title:       e.course.title,
       field:       e.course.field,
-      thumbnail:   e.course.thumbnailUrl,
+      thumbnailUrl: e.course.thumbnailUrl,
       progress:    Math.round(e.progress),
       accessUntil: e.accessUntil,
       type:        'mini-course',

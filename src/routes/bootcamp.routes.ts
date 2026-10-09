@@ -61,12 +61,12 @@ bootcampRouter.get('/enrolled', authenticate, async (req: AuthRequest, res: Resp
     })
 
     const result = enrollments.map((e) => ({
-      id:        e.bootcamp.id,
-      title:     e.bootcamp.title,
-      field:     e.bootcamp.field,
-      thumbnail: e.bootcamp.thumbnailUrl,
-      progress:  Math.round(e.progress),
-      type:      'bootcamp',
+      id:           e.bootcamp.id,
+      title:        e.bootcamp.title,
+      field:        e.bootcamp.field,
+      thumbnailUrl: e.bootcamp.thumbnailUrl,
+      progress:     Math.round(e.progress),
+      type:         'bootcamp',
     }))
     res.json({ success: true, data: result })
   } catch (err) { next(err) }
