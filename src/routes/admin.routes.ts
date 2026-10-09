@@ -1140,6 +1140,84 @@ adminRouter.delete('/courses/:id', async (req: AuthRequest, res: Response, next:
   } catch (err) { next(err) }
 })
 
+// ── GET /admin/courses/:id/sessions ──────────────────────────────
+adminRouter.get('/courses/:id/sessions', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const course = await prisma.miniCourse.findUnique({
+      where: { id },
+      include: {
+        chapters: {
+          include: {
+            sessions: { orderBy: { orderIndex: 'asc' } }
+          }
+        }
+      }
+    })
+    
+    if (!course) return res.status(404).json({ success: false, message: 'Course tidak ditemukan' })
+    
+    // Flatten sessions from all chapters (usually Mini Course only has 1 chapter)
+    const sessions = course.chapters.flatMap(ch => ch.sessions)
+    res.json({ success: true, data: sessions })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/courses/:id/sessions ─────────────────────────────
+adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = req.body
+    
+    // Find or create default chapter
+    let chapter = await prisma.courseChapter.findFirst({
+      where: { courseId: id },
+      orderBy: { orderIndex: 'asc' }
+    })
+    
+    if (!chapter) {
+      chapter = await prisma.courseChapter.create({
+        data: {
+          courseId: id,
+          title: 'Materi Kelas',
+          orderIndex: 0
+        }
+      })
+    }
+    
+    // Get last session order
+    const lastSession = await prisma.courseSession.findFirst({
+      where: { chapterId: chapter.id },
+      orderBy: { orderIndex: 'desc' }
+    })
+    
+    const newOrderIndex = lastSession ? lastSession.orderIndex + 1 : 0
+    
+    const session = await prisma.courseSession.create({
+      data: {
+        chapterId: chapter.id,
+        title: data.title,
+        type: data.type,
+        videoUrl: data.videoUrl || null,
+        materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
+        isPreview: data.isPreview || false,
+        orderIndex: newOrderIndex
+      }
+    })
+    
+    res.json({ success: true, data: session })
+  } catch (err) { next(err) }
+})
+
+// ── DELETE /admin/courses/sessions/:id ───────────────────────────
+adminRouter.delete('/courses/sessions/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    await prisma.courseSession.delete({ where: { id } })
+    res.json({ success: true, message: 'Sesi dihapus' })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/courses/:id/featured ─────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/courses/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
