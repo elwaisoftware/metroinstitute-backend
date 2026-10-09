@@ -1035,9 +1035,6 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
 adminRouter.put('/bootcamps/:id/chapters/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { chapters } = req.body
-    // chapters: { id: string, order: number }[]
-    // Wait, the payload might contain sessions too? The frontend sends:
-    // const payload = newArr.map((c, i) => ({ id: c.id, order: i }))
     
     await prisma.$transaction(
       chapters.map((ch: any) =>
@@ -1050,6 +1047,25 @@ adminRouter.put('/bootcamps/:id/chapters/reorder', async (req: AuthRequest, res:
     res.json({ success: true })
   } catch (err) { next(err) }
 })
+
+// ── PUT /admin/bootcamps/:id/sessions/reorder ────────────────
+adminRouter.put('/bootcamps/:id/sessions/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessions } = req.body
+    // sessions: { id: string, order: number }[]
+    
+    await prisma.$transaction(
+      sessions.map((s: any) =>
+        prisma.bootcampSession.update({
+          where: { id: s.id },
+          data: { orderIndex: s.order }
+        })
+      )
+    )
+    res.json({ success: true })
+  } catch (err) { next(err) }
+})
+
 
 // ── PATCH /admin/bootcamps/:id/featured ────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
