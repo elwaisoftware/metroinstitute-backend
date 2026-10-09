@@ -2,6 +2,7 @@ import { Router, Response, NextFunction, Request } from 'express'
 import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { optionalAuth, AuthRequest } from '../middleware/auth.middleware'
+import { WhatsAppService } from '../services/whatsapp.service'
 
 export const searchRouter = Router()
 export const homepageRouter = Router()
@@ -101,6 +102,19 @@ leadRouter.post('/', async (req: Request, res: Response, next: NextFunction) => 
       create: { name, email, phone, source },
       update: { name, phone },
     })
+
+    if (phone) {
+      const configRow = await prisma.homepageConfig.findUnique({
+        where: { key: 'ebook_url' }
+      })
+      const ebookUrl = configRow?.value || 'https://metroinstitute.id/ebook'
+      
+      const message = `Halo ${name},\n\nTerima kasih telah mengunduh Ebook dari Metro Institute!\n\nBerikut adalah link untuk mengunduh ebook Anda:\n${ebookUrl}\n\nSelamat membaca!`
+      
+      WhatsAppService.sendBroadcast([phone], message).catch(err => {
+        console.error('Failed to send ebook WA to', phone, err)
+      })
+    }
 
     res.status(201).json({ success: true, message: 'Terima kasih! Tim kami akan menghubungimu segera.' })
   } catch (err) { next(err) }
