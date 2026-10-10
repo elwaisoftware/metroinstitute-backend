@@ -750,8 +750,7 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
         isPublished,
         batchStatus: batchStatus as any,
         certificateTemplateId: data.certificateTemplateId || null,
-        thumbnailUrl: data.thumbnailUrl || null,
-        shortDescription: data.shortDescription || ''
+        thumbnailUrl: data.thumbnailUrl || null
       }
     })
     res.json({ success: true, data: bootcamp })
@@ -810,7 +809,6 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         startDate: item.batchStartDate,
         endDate: item.batchEndDate,
         thumbnailUrl: item.thumbnailUrl,
-        shortDescription: item.shortDescription,
         _count: { registrations: item._count?.enrollments || 0 }
       }
     })
@@ -862,7 +860,6 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (batchStatus !== undefined) updateData.batchStatus = batchStatus as any
     if (data.certificateTemplateId !== undefined) updateData.certificateTemplateId = data.certificateTemplateId || null
     if (data.thumbnailUrl !== undefined) updateData.thumbnailUrl = data.thumbnailUrl || null
-    if (data.shortDescription !== undefined) updateData.shortDescription = data.shortDescription || ''
 
     const bootcamp = await prisma.bootcamp.update({
       where: { id },

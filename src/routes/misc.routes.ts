@@ -49,6 +49,7 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
         select: {
           id: true, title: true, field: true, price: true,
           thumbnailUrl: true, batchStatus: true, rating: true, mentorName: true, shortDescription: true,
+          description: true,
           outcomes: true,
         },
       }),
