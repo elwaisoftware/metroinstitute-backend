@@ -92,6 +92,18 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
 transactionRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { status, page = 1, limit = 20 } = req.query as Record<string, string>
+    
+    // Auto-cancel transactions older than 24 hours
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    await prisma.transaction.updateMany({
+      where: {
+        userId: req.user!.id,
+        status: 'PENDING',
+        createdAt: { lt: twentyFourHoursAgo }
+      },
+      data: { status: 'CANCELLED' }
+    })
+
     const where: Record<string, unknown> = { userId: req.user!.id }
     if (status) where.status = status
 
@@ -115,8 +127,21 @@ transactionRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
 // ── GET /transactions/:orderId ─────────────────────────────
 transactionRouter.get('/:orderId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const orderId = (req.params as Record<string, string>).orderId
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+    // Auto-cancel if pending and older than 24 hours
+    await prisma.transaction.updateMany({
+      where: {
+        orderId,
+        status: 'PENDING',
+        createdAt: { lt: twentyFourHoursAgo }
+      },
+      data: { status: 'CANCELLED' }
+    })
+
     const tx = await prisma.transaction.findUnique({
-      where: { orderId: (req.params as Record<string, string>).orderId },
+      where: { orderId },
       select: {
         id: true, orderId: true, productType: true, title: true,
         amount: true, status: true, snapToken: true, createdAt: true, paidAt: true, userId: true,
