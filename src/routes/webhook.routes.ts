@@ -42,7 +42,7 @@ webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
     if (transaction_status === 'settlement' || transaction_status === 'capture') {
       newStatus = fraud_status === 'deny' ? 'FAILED' : 'SUCCESS'
     } else if (['deny', 'cancel', 'expire'].includes(transaction_status)) {
-      newStatus = transaction_status === 'cancel' ? 'CANCELLED' : 'FAILED'
+      newStatus = (transaction_status === 'cancel' || transaction_status === 'expire') ? 'CANCELLED' : 'FAILED'
     } else if (transaction_status === 'refund') {
       newStatus = 'REFUNDED'
     }
