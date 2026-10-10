@@ -131,6 +131,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
       batchStatus: computedBatchStatus,
       reviews: bootcamp.reviews.map((r) => ({ ...r, comment: r.content })),
       isEnrolled,
+      progress: enrollment?.progress ?? 0,
       isWishlisted,
     }
 
@@ -152,6 +153,7 @@ bootcampRouter.post('/:id/reviews', authenticate, async (req: AuthRequest, res: 
       where: { userId_bootcampId: { userId, bootcampId } }
     })
     if (!enrollment) throw createError(403, 'Kamu belum terdaftar di bootcamp ini sehingga belum bisa memberikan ulasan')
+    if (enrollment.progress < 100) throw createError(403, 'Selesaikan bootcamp 100% terlebih dahulu untuk memberikan ulasan')
 
     const review = await prisma.review.upsert({
       where: { userId_bootcampId: { userId, bootcampId } },

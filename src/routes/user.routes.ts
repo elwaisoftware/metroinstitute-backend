@@ -160,6 +160,26 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       }
     }
 
+    // Fallback if no lastProgress found, pick from active enrollments
+    if (!continueLearning) {
+      const activeBootcamp = bootcampEnrollments.find(e => e.progress < 100) || bootcampEnrollments[0]
+      const activeCourse = courseEnrollments.find(e => e.progress < 100) || courseEnrollments[0]
+
+      if (activeBootcamp && (!activeCourse || activeBootcamp.updatedAt >= activeCourse.updatedAt)) {
+        continueLearning = {
+          type: 'bootcamp', id: activeBootcamp.bootcamp.id, sessionId: '',
+          title: activeBootcamp.bootcamp.title, sessionTitle: 'Lanjutkan Belajar',
+          progress: activeBootcamp.progress, thumbnail: activeBootcamp.bootcamp.thumbnailUrl,
+        }
+      } else if (activeCourse) {
+        continueLearning = {
+          type: 'mini-course', id: activeCourse.course.id, sessionId: '',
+          title: activeCourse.course.title, sessionTitle: 'Lanjutkan Belajar',
+          progress: activeCourse.progress, thumbnail: activeCourse.course.thumbnailUrl,
+        }
+      }
+    }
+
     // Recommendations based on selectedField
     const recommendations = await prisma.miniCourse.findMany({
       where: {

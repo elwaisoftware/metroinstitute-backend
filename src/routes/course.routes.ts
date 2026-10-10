@@ -113,6 +113,7 @@ courseRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFunct
       ...course,
       reviews: course.reviews.map((r) => ({ ...r, comment: r.content })),
       isEnrolled:   !!enrollment && enrollment.isActive,
+      progress:     enrollment?.progress ?? 0,
       isWishlisted: !!wishlist,
       accessUntil:  enrollment?.accessUntil ?? null,
     }
@@ -136,6 +137,7 @@ courseRouter.post('/:id/reviews', async (req: AuthRequest, res: Response, next: 
       where: { userId_courseId: { userId, courseId } }
     })
     if (!enrollment) throw createError(403, 'Kamu belum terdaftar di kursus ini sehingga belum bisa memberikan ulasan')
+    if (enrollment.progress < 100) throw createError(403, 'Selesaikan kursus 100% terlebih dahulu untuk memberikan ulasan')
 
     // Upsert review (jika belum ada dibuat, jika sudah ada di-update)
     const review = await prisma.review.upsert({
