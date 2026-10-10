@@ -121,6 +121,45 @@ courseRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFunct
   } catch (err) { next(err) }
 })
 
+// ── POST /courses/:id/reviews ──────────────────────────────
+courseRouter.post('/:id/reviews', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { rating, content } = z.object({
+      rating:  z.number().min(1).max(5),
+      content: z.string().max(1000).optional(),
+    }).parse(req.body)
+    const userId = req.user!.id
+    const courseId = (req.params as Record<string, string>).id
+
+    // Pastikan mentee sudah mengambil kursus ini
+    const enrollment = await prisma.courseEnrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } }
+    })
+    if (!enrollment) throw createError(403, 'Kamu belum terdaftar di kursus ini sehingga belum bisa memberikan ulasan')
+
+    // Upsert review (jika belum ada dibuat, jika sudah ada di-update)
+    const review = await prisma.review.upsert({
+      where: { userId_courseId: { userId, courseId } },
+      update: { rating, content },
+      create: { userId, courseId, productType: 'MINI_COURSE', rating, content },
+    })
+
+    // Update rata-rata rating di tabel MiniCourse
+    const agg = await prisma.review.aggregate({
+      where: { courseId, isHidden: false },
+      _avg: { rating: true },
+      _count: { id: true },
+    })
+
+    await prisma.miniCourse.update({
+      where: { id: courseId },
+      data: { rating: agg._avg.rating ?? 0, reviewCount: agg._count.id },
+    })
+
+    res.json({ success: true, data: review })
+  } catch (err) { next(err) }
+})
+
 // ── GET /courses/:id/learn/:sessionId ─────────────────────
 courseRouter.get('/:id/learn/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

@@ -138,6 +138,42 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
   } catch (err) { next(err) }
 })
 
+// ── POST /bootcamps/:id/reviews ────────────────────────────
+bootcampRouter.post('/:id/reviews', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { rating, content } = z.object({
+      rating:  z.number().min(1).max(5),
+      content: z.string().max(1000).optional(),
+    }).parse(req.body)
+    const userId = req.user!.id
+    const bootcampId = (req.params as Record<string, string>).id
+
+    const enrollment = await prisma.bootcampEnrollment.findUnique({
+      where: { userId_bootcampId: { userId, bootcampId } }
+    })
+    if (!enrollment) throw createError(403, 'Kamu belum terdaftar di bootcamp ini sehingga belum bisa memberikan ulasan')
+
+    const review = await prisma.review.upsert({
+      where: { userId_bootcampId: { userId, bootcampId } },
+      update: { rating, content },
+      create: { userId, bootcampId, productType: 'BOOTCAMP', rating, content },
+    })
+
+    const agg = await prisma.review.aggregate({
+      where: { bootcampId, isHidden: false },
+      _avg: { rating: true },
+      _count: { id: true },
+    })
+
+    await prisma.bootcamp.update({
+      where: { id: bootcampId },
+      data: { rating: agg._avg.rating ?? 0, reviewCount: agg._count.id },
+    })
+
+    res.json({ success: true, data: review })
+  } catch (err) { next(err) }
+})
+
 // ── GET /bootcamps/:id/learn/:sessionId ────────────────────
 bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
