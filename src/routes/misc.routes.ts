@@ -48,7 +48,7 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
         take: 4,
         select: {
           id: true, title: true, field: true, price: true,
-          thumbnailUrl: true, batchStatus: true, rating: true, mentorName: true,
+          thumbnailUrl: true, batchStatus: true, rating: true, mentorName: true, shortDescription: true,
         },
       }),
       prisma.miniCourse.findMany({
@@ -57,7 +57,7 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
         orderBy: { enrollmentCount: 'desc' },
         select: {
           id: true, title: true, field: true, price: true,
-          thumbnailUrl: true, rating: true, enrollmentCount: true,
+          thumbnailUrl: true, rating: true, enrollmentCount: true, shortDescription: true,
         },
       }),
       Promise.all([
