@@ -9,9 +9,15 @@ import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
 import fsOriginal from 'fs'
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+})
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 })
 
 export const adminRouter = Router()
@@ -703,15 +709,36 @@ adminRouter.post('/upload', upload.single('file'), async (req: AuthRequest, res:
   try {
     if (!req.file) throw createError(400, 'File tidak ditemukan')
     
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder: 'metro-institute/admin-uploads' },
-        (err, result) => err ? reject(err) : resolve(result as { secure_url: string })
-      )
-      stream.end(req.file!.buffer)
-    })
-    
-    res.json({ success: true, url: result.secure_url })
+    // Attempt Cloudinary upload with resource_type auto (images, video, documents)
+    try {
+      const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: 'metro-institute/admin-uploads', resource_type: 'auto' },
+          (err, result) => err ? reject(err) : resolve(result as { secure_url: string })
+        )
+        stream.end(req.file!.buffer)
+      })
+      if (result?.secure_url) {
+        return res.json({ success: true, url: result.secure_url })
+      }
+    } catch (cloudErr) {
+      console.warn('Cloudinary upload warning/fallback:', cloudErr)
+    }
+
+    // Local disk storage fallback
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    if (!fsOriginal.existsSync(uploadsDir)) {
+      fsOriginal.mkdirSync(uploadsDir, { recursive: true })
+    }
+    const safeExt = path.extname(req.file.originalname) || '.mp4'
+    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${safeExt}`
+    const filepath = path.join(uploadsDir, filename)
+    fsOriginal.writeFileSync(filepath, req.file.buffer)
+
+    const host = req.get('host') || 'localhost:5000'
+    const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
+    const fileUrl = `${protocol}://${host}/uploads/${filename}`
+    res.json({ success: true, url: fileUrl })
   } catch (err) { next(err) }
 })
 
