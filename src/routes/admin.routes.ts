@@ -1228,7 +1228,7 @@ adminRouter.post('/courses', async (req: AuthRequest, res: Response, next: NextF
         shortDescription: data.descShort,
         description: data.descLong,
         field: data.field,
-        level: 'BEGINNER', // Default since frontend doesn't send it yet
+        level: data.level || 'BEGINNER',
         price: data.price,
         accessDays: data.accessDays || 36500,
         totalDuration: data.totalDuration,
@@ -1247,20 +1247,26 @@ adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: 
     const { id } = req.params as Record<string, string>
     const data = req.body
     
+    const updatePayload: any = {
+      title: data.title,
+      shortDescription: data.descShort,
+      description: data.descLong,
+      field: data.field,
+      price: data.price,
+      accessDays: data.accessDays || 36500,
+      totalDuration: data.totalDuration,
+      isPublished: data.status === 'PUBLISHED',
+      certificateTemplateId: data.certificateTemplateId || null,
+      thumbnailUrl: data.thumbnailUrl || null
+    }
+
+    if (data.level) {
+      updatePayload.level = data.level
+    }
+
     const updated = await prisma.miniCourse.update({
       where: { id },
-      data: {
-        title: data.title,
-        shortDescription: data.descShort,
-        description: data.descLong,
-        field: data.field,
-        price: data.price,
-        accessDays: data.accessDays || 36500,
-        totalDuration: data.totalDuration,
-        isPublished: data.status === 'PUBLISHED',
-        certificateTemplateId: data.certificateTemplateId || null,
-        thumbnailUrl: data.thumbnailUrl || null
-      }
+      data: updatePayload
     })
     res.json({ success: true, data: updated })
   } catch (err) { next(err) }
