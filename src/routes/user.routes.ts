@@ -204,6 +204,32 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       })),
     ]
 
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+
+    const [watchedVideoToday, didChallengeToday] = await Promise.all([
+      prisma.sessionProgress.findFirst({
+        where: {
+          userId,
+          isCompleted: true,
+          completedAt: { gte: startOfToday },
+        },
+      }),
+      prisma.challengeAttempt.findFirst({
+        where: {
+          userId,
+          submittedAt: { gte: startOfToday },
+        },
+      }),
+    ])
+
+    const dailyMissions = {
+      hasPhoto: Boolean(user?.photoUrl),
+      watchedVideo: Boolean(watchedVideoToday),
+      didChallenge: Boolean(didChallengeToday),
+      allCompleted: Boolean(watchedVideoToday && didChallengeToday),
+    }
+
     res.json({
       success: true,
       data: {
@@ -216,6 +242,7 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
         })),
         recommendations: recommendations.map((r) => ({ ...r, type: 'mini-course' as const })),
         unreadNotifications: unreadCount,
+        dailyMissions,
       },
     })
   } catch (err) { next(err) }
