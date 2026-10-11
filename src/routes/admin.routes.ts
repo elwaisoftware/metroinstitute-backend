@@ -1866,11 +1866,30 @@ adminRouter.get('/webinars/:id', async (req: AuthRequest, res: Response, next: N
 adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as Record<string, string>
-    const data = req.body
+    const updateSchema = z.object({
+      title: z.string().min(5).optional(),
+      description: z.string().min(10).optional(),
+      shortDescription: z.string().optional().nullable(),
+      speakerName: z.string().min(2).optional(),
+      speakerRole: z.string().optional().nullable(),
+      speakerAvatarUrl: z.string().optional().nullable(),
+      field: z.enum(['UI_UX', 'FRONTEND', 'BACKEND', 'MOBILE']).optional(),
+      price: z.number().min(0).optional(),
+      bannerUrl: z.string().optional().nullable(),
+      scheduledAt: z.string().optional(),
+      duration: z.number().min(1).optional(),
+      meetingUrl: z.string().optional().nullable(),
+      recordingUrl: z.string().optional().nullable(),
+      quota: z.number().optional().nullable(),
+      isPublished: z.boolean().optional(),
+      isFeatured: z.boolean().optional(),
+      certificateTemplateId: z.string().optional().nullable(),
+    })
 
-    const updateData: any = { ...data }
-    if (data.scheduledAt) {
-      updateData.scheduledAt = new Date(data.scheduledAt)
+    const body = updateSchema.parse(req.body)
+    const updateData: any = { ...body }
+    if (body.scheduledAt) {
+      updateData.scheduledAt = new Date(body.scheduledAt)
     }
 
     const webinar = await prisma.webinar.update({
