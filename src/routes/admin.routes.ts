@@ -8,6 +8,7 @@ import multer from 'multer'
 import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
 import fsOriginal from 'fs'
+import crypto from 'crypto'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -837,6 +838,74 @@ adminRouter.post('/upload', upload.single('file'), async (req: AuthRequest, res:
     const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
     const fileUrl = `${protocol}://${host}/uploads/${filename}`
     res.json({ success: true, url: fileUrl })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/bunny/create-upload ─────────────────────────
+adminRouter.post('/bunny/create-upload', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { title } = req.body || {}
+    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '776427'
+    const apiKey = process.env.BUNNY_STREAM_API_KEY
+    if (!apiKey) throw createError(500, 'BUNNY_STREAM_API_KEY belum dikonfigurasi di server')
+
+    const videoTitle = (typeof title === 'string' && title.trim()) ? title.trim() : `Video-${Date.now()}`
+
+    // 1. Create Video object in Bunny Stream
+    const createRes = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos`, {
+      method: 'POST',
+      headers: {
+        'AccessKey': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ title: videoTitle }),
+    })
+
+    if (!createRes.ok) {
+      const errText = await createRes.text()
+      throw createError(createRes.status, `Gagal membuat video di Bunny Stream: ${errText}`)
+    }
+
+    const videoData = (await createRes.json()) as { guid: string; title: string }
+    const videoId = videoData.guid
+
+    // 2. Generate Tus upload signature (valid for 4 hours)
+    const expirationTime = Math.floor(Date.now() / 1000) + 3600 * 4
+    const signature = crypto
+      .createHash('sha256')
+      .update(`${libraryId}${apiKey}${expirationTime}${videoId}`)
+      .digest('hex')
+
+    const embedUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`
+
+    res.json({
+      success: true,
+      data: {
+        videoId,
+        libraryId,
+        expirationTime,
+        signature,
+        embedUrl,
+      },
+    })
+  } catch (err) { next(err) }
+})
+
+// ── DELETE /admin/bunny/video/:videoId ───────────────────────
+adminRouter.delete('/bunny/video/:videoId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { videoId } = req.params
+    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '776427'
+    const apiKey = process.env.BUNNY_STREAM_API_KEY
+    if (!apiKey || !videoId) return res.json({ success: true, message: 'Skipped' })
+
+    await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`, {
+      method: 'DELETE',
+      headers: { 'AccessKey': apiKey },
+    }).catch(() => {})
+
+    res.json({ success: true, message: 'Video dihapus dari Bunny Stream' })
   } catch (err) { next(err) }
 })
 
