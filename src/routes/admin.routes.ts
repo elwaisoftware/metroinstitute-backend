@@ -219,11 +219,109 @@ adminRouter.get('/mentees/:id', async (req: AuthRequest, res: Response, next: Ne
           include: { course: { select: { id: true, title: true } } },
         },
         certificates: { orderBy: { issuedAt: 'desc' } },
-        xpLogs: { orderBy: { createdAt: 'desc' }, take: 10 },
+        xpLogs: { orderBy: { createdAt: 'desc' } },
+        _count: {
+          select: {
+            bootcampEnrollments: true,
+            courseEnrollments: true,
+            xpLogs: true,
+          }
+        }
       },
     })
     if (!user) throw createError(404, 'User tidak ditemukan')
-    res.json({ success: true, data: user })
+    res.json({
+      success: true,
+      data: {
+        ...user,
+        isActive: !user.isSuspended,
+        field: user.selectedField,
+        _count: {
+          bootcampRegistrations: user._count.bootcampEnrollments,
+          courseEnrollments: user._count.courseEnrollments,
+          xpHistories: user._count.xpLogs,
+        }
+      }
+    })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/mentees/:id/xp ─────────────────────────────
+adminRouter.get('/mentees/:id/xp', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const xpLogs = await prisma.xpLog.findMany({
+      where: { userId: (req.params as Record<string, string>).id },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({
+      success: true,
+      data: xpLogs.map((l) => ({
+        id: l.id,
+        amount: l.amount,
+        reason: l.note || (l.source === 'SKILL_TEST_COMPLETE' ? 'Skill Test selesai' : l.source.replace(/_/g, ' ')),
+        createdAt: l.createdAt,
+      })),
+    })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/mentees/:id/bootcamps ──────────────────────
+adminRouter.get('/mentees/:id/bootcamps', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const enrollments = await prisma.bootcampEnrollment.findMany({
+      where: { userId: (req.params as Record<string, string>).id },
+      include: {
+        bootcamp: { select: { id: true, title: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({
+      success: true,
+      data: enrollments.map((e) => ({
+        id: e.bootcampId,
+        name: e.bootcamp.title,
+        progress: e.progress,
+        status: e.isActive ? 'Aktif' : 'Selesai',
+        joinedAt: e.createdAt,
+      })),
+    })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/mentees/:id/courses ────────────────────────
+adminRouter.get('/mentees/:id/courses', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const enrollments = await prisma.courseEnrollment.findMany({
+      where: { userId: (req.params as Record<string, string>).id },
+      include: {
+        course: { select: { id: true, title: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({
+      success: true,
+      data: enrollments.map((e) => ({
+        id: e.courseId,
+        title: e.course.title,
+        progress: e.progress,
+        purchasedAt: e.createdAt,
+      })),
+    })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/mentees/:id/toggle-status ────────────────
+adminRouter.patch('/mentees/:id/toggle-status', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) throw createError(404, 'User tidak ditemukan')
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { isSuspended: !user.isSuspended },
+    })
+    res.json({ success: true, data: { isActive: !updated.isSuspended } })
   } catch (err) { next(err) }
 })
 

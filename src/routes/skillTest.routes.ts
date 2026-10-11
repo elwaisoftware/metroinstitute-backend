@@ -61,27 +61,39 @@ skillTestRouter.post('/submit', async (req: AuthRequest, res: Response, next: Ne
 
     if (questions.length === 0) throw createError(400, 'Jawaban tidak valid')
 
+    // Helper to resolve field from option or fallback to standard A/B/C/D
+    const resolveField = (opt: any, index: number) => {
+      if (opt?.field) return opt.field
+      const idStr = String(opt?.id ?? index).toLowerCase()
+      if (idStr === 'a' || idStr === '0') return 'UI_UX'
+      if (idStr === 'b' || idStr === '1') return 'FRONTEND'
+      if (idStr === 'c' || idStr === '2') return 'BACKEND'
+      if (idStr === 'd' || idStr === '3') return 'MOBILE'
+      return null
+    }
+
     // Score per field
     const fieldScores: Record<string, number> = {}
 
     for (const q of questions) {
       const chosenOptionId = answers[q.id]
       const optionsArray = (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) as any[]
-      const chosenOption = optionsArray.find(o => o.id === chosenOptionId)
+      const chosenIndex = optionsArray.findIndex(o => o.id === chosenOptionId)
+      const chosenOption = chosenIndex !== -1 ? optionsArray[chosenIndex] : null
       
-      const field = chosenOption?.field
+      const field = resolveField(chosenOption, chosenIndex)
       if (field) {
         fieldScores[field] = (fieldScores[field] || 0) + 1
       }
     }
 
     // Convert to percentages based on max possible score per field
-    // Max possible score for a field = number of questions that have an option for that field
     const fieldTotals: Record<string, number> = {}
     for (const q of questions) {
       const optionsArray = (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) as any[]
-      // Get unique fields available in this question
-      const availableFields = new Set(optionsArray.map(o => o.field).filter(Boolean))
+      const availableFields = new Set(
+        optionsArray.map((o, idx) => resolveField(o, idx)).filter(Boolean)
+      )
       for (const f of availableFields) {
         fieldTotals[f as string] = (fieldTotals[f as string] || 0) + 1
       }
