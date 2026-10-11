@@ -38,3 +38,9 @@ Thumbs.db
 *.db
 *.sqlite
 *.db-journal
+
+# temp scripts
+check*.js
+force-update-tx.js
+set_featured.js
+update_db.js
