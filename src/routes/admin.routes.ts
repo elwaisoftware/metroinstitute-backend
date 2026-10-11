@@ -1823,7 +1823,7 @@ adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: Next
       speakerName: z.string().min(2, 'Nama pembicara wajib diisi'),
       speakerRole: z.string().optional().nullable(),
       speakerAvatarUrl: z.string().optional().nullable(),
-      field: z.enum(['UI_UX', 'FRONTEND', 'BACKEND', 'MOBILE']).default('FRONTEND'),
+      field: z.enum(['UI_UX', 'FRONTEND', 'BACKEND', 'MOBILE']).optional().default('FRONTEND'),
       price: z.number().min(0).default(0),
       bannerUrl: z.string().optional().nullable(),
       scheduledAt: z.string(),
