@@ -9,7 +9,7 @@ export const webinarRouter = Router()
 // ── GET /webinars ───────────────────────────────────────────
 webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { search, field, status = 'UPCOMING' } = req.query as Record<string, string>
+    const { search, field, status } = req.query as Record<string, string>
     const userId = req.user?.id
     const now = new Date()
 
