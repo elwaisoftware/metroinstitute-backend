@@ -1764,3 +1764,204 @@ adminRouter.get('/certificates', async (req: AuthRequest, res: Response, next: N
   } catch (err) { next(err) }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN WEBINARS & WORKSHOPS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── GET /admin/webinars ──────────────────────────────────────
+adminRouter.get('/webinars', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { search, field, status, page = '1', limit = '10' } = req.query as Record<string, string>
+    const p = Math.max(1, parseInt(page, 10))
+    const l = Math.max(1, parseInt(limit, 10))
+    const skip = (p - 1) * l
+
+    const where: any = {}
+    if (field && field !== 'ALL') where.field = field
+    if (status === 'DRAFT') where.isPublished = false
+    if (status === 'PUBLISHED') where.isPublished = true
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { speakerName: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.webinar.count({ where }),
+      prisma.webinar.findMany({
+        where,
+        skip,
+        take: l,
+        orderBy: { scheduledAt: 'desc' },
+        include: {
+          _count: { select: { registrations: true } },
+          certificateTemplate: { select: { id: true, name: true } },
+        },
+      }),
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        pagination: { total, page: p, limit: l, totalPages: Math.ceil(total / l) },
+      },
+    })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/webinars ─────────────────────────────────────
+adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      title: z.string().min(5, 'Minimal 5 karakter'),
+      description: z.string().min(10, 'Minimal 10 karakter'),
+      shortDescription: z.string().optional().nullable(),
+      speakerName: z.string().min(2, 'Nama pembicara wajib diisi'),
+      speakerRole: z.string().optional().nullable(),
+      speakerAvatarUrl: z.string().optional().nullable(),
+      field: z.enum(['UI_UX', 'FRONTEND', 'BACKEND', 'MOBILE']).default('FRONTEND'),
+      price: z.number().min(0).default(0),
+      bannerUrl: z.string().optional().nullable(),
+      scheduledAt: z.string(),
+      duration: z.number().min(1).default(90),
+      meetingUrl: z.string().optional().nullable(),
+      recordingUrl: z.string().optional().nullable(),
+      quota: z.number().optional().nullable(),
+      isPublished: z.boolean().default(true),
+      isFeatured: z.boolean().default(false),
+      certificateTemplateId: z.string().optional().nullable(),
+    }).parse(req.body)
+
+    const webinar = await prisma.webinar.create({
+      data: {
+        ...body,
+        scheduledAt: new Date(body.scheduledAt),
+      },
+    })
+
+    res.json({ success: true, data: webinar })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/webinars/:id ──────────────────────────────────
+adminRouter.get('/webinars/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const webinar = await prisma.webinar.findUnique({
+      where: { id: (req.params as Record<string, string>).id },
+      include: {
+        _count: { select: { registrations: true } },
+        certificateTemplate: { select: { id: true, name: true } },
+      },
+    })
+    if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
+    res.json({ success: true, data: webinar })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/webinars/:id ────────────────────────────────
+adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = req.body
+
+    const updateData: any = { ...data }
+    if (data.scheduledAt) {
+      updateData.scheduledAt = new Date(data.scheduledAt)
+    }
+
+    const webinar = await prisma.webinar.update({
+      where: { id },
+      data: updateData,
+    })
+
+    res.json({ success: true, data: webinar })
+  } catch (err) { next(err) }
+})
+
+// ── DELETE /admin/webinars/:id ───────────────────────────────
+adminRouter.delete('/webinars/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    await prisma.webinar.delete({ where: { id } })
+    res.json({ success: true, message: 'Webinar berhasil dihapus' })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/webinars/:id/featured ───────────────────────
+adminRouter.patch('/webinars/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const { isFeatured } = req.body
+    const updated = await prisma.webinar.update({
+      where: { id },
+      data: { isFeatured: Boolean(isFeatured) },
+    })
+    res.json({ success: true, data: updated })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/webinars/:id/participants ─────────────────────
+adminRouter.get('/webinars/:id/participants', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const webinar = await prisma.webinar.findUnique({
+      where: { id },
+      select: { id: true, title: true, scheduledAt: true, quota: true },
+    })
+    if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
+
+    const registrations = await prisma.webinarRegistration.findMany({
+      where: { webinarId: id },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true, photoUrl: true },
+        },
+      },
+      orderBy: { registeredAt: 'desc' },
+    })
+
+    res.json({
+      success: true,
+      data: {
+        webinar,
+        participants: registrations.map((r) => ({
+          registrationId: r.id,
+          registeredAt: r.registeredAt,
+          attended: r.attended,
+          user: r.user,
+        })),
+        total: registrations.length,
+      },
+    })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/webinars/:id/participants/:regId/attend ─────
+adminRouter.patch('/webinars/:id/participants/:regId/attend', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { regId } = req.params as Record<string, string>
+    const { attended } = req.body
+    const updated = await prisma.webinarRegistration.update({
+      where: { id: regId },
+      data: { attended: Boolean(attended) },
+    })
+    res.json({ success: true, data: updated })
+  } catch (err) { next(err) }
+})
+
+// ── DELETE /admin/webinars/:id/participants/:regId ───────────
+adminRouter.delete('/webinars/:id/participants/:regId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { regId } = req.params as Record<string, string>
+    await prisma.webinarRegistration.delete({
+      where: { id: regId },
+    })
+    res.json({ success: true, message: 'Peserta berhasil dihapus dari webinar' })
+  } catch (err) { next(err) }
+})
+
+

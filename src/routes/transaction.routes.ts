@@ -20,11 +20,12 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
   try {
     const userId = req.user!.id
     const schema = z.object({
-      productType: z.enum(['MINI_COURSE', 'BOOTCAMP']),
+      productType: z.enum(['MINI_COURSE', 'BOOTCAMP', 'WEBINAR']),
       courseId: z.string().optional(),
       bootcampId: z.string().optional(),
+      webinarId: z.string().optional(),
     })
-    const { productType, courseId, bootcampId } = schema.parse(req.body)
+    const { productType, courseId, bootcampId, webinarId } = schema.parse(req.body)
 
     // Resolve product
     let title = '', price = 0, productId = ''
@@ -44,6 +45,20 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       })
       if (existing) throw createError(409, 'Kamu sudah terdaftar di bootcamp ini')
       title = bootcamp.title; price = bootcamp.price; productId = bootcampId
+    } else if (productType === 'WEBINAR' && webinarId) {
+      const webinar = await prisma.webinar.findUnique({
+        where: { id: webinarId },
+        include: { _count: { select: { registrations: true } } },
+      })
+      if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
+      if (webinar.quota && webinar._count.registrations >= webinar.quota) {
+        throw createError(400, 'Kuota peserta webinar sudah penuh')
+      }
+      const existing = await prisma.webinarRegistration.findUnique({
+        where: { userId_webinarId: { userId, webinarId } },
+      })
+      if (existing) throw createError(409, 'Kamu sudah terdaftar di webinar ini')
+      title = webinar.title; price = webinar.price; productId = webinarId
     } else {
       throw createError(400, 'Parameter produk tidak lengkap')
     }
@@ -58,7 +73,7 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
     // Create pending transaction
     const transaction = await prisma.transaction.create({
       data: {
-        orderId, userId, productType, courseId, bootcampId,
+        orderId, userId, productType, courseId, bootcampId, webinarId,
         amount: price, status: 'PENDING', title,
       },
     })

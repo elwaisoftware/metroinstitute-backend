@@ -41,7 +41,7 @@ searchRouter.get('/', optionalAuth, async (req: Request, res: Response, next: Ne
 // Public — used by landing page
 homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const [configRows, featuredBootcamps, featuredCourses, stats] = await Promise.all([
+    const [configRows, featuredBootcamps, featuredCourses, featuredWebinars, stats] = await Promise.all([
       prisma.homepageConfig.findMany(),
       prisma.bootcamp.findMany({
         where: { isPublished: true, isFeatured: true },
@@ -63,6 +63,17 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
           tags: true,
         },
       }),
+      prisma.webinar.findMany({
+        where: { isPublished: true },
+        take: 6,
+        orderBy: { scheduledAt: 'asc' },
+        select: {
+          id: true, title: true, field: true, price: true,
+          bannerUrl: true, speakerName: true, speakerRole: true,
+          scheduledAt: true, duration: true, shortDescription: true,
+          description: true, isFeatured: true,
+        },
+      }),
       Promise.all([
         prisma.user.count({ where: { role: 'MENTEE' } }),
         prisma.certificate.count(),
@@ -79,6 +90,7 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
         config,
         featuredBootcamps,
         featuredCourses,
+        featuredWebinars,
         stats: {
           totalMentees:      stats[0],
           totalCertificates: stats[1],

@@ -85,11 +85,13 @@ enum TxStatus {
 enum ProductType {
   BOOTCAMP
   MINI_COURSE
+  WEBINAR
 }
 
 enum CertType {
   BOOTCAMP
   MINI_COURSE
+  WEBINAR
 }
 
 enum ChallengeType {
@@ -150,6 +152,7 @@ model User {
   sessionRatings      SessionRating[]
   wishlistItems       WishlistItem[]
   leaderboardEntries  LeaderboardSnapshot[]
+  webinarRegistrations WebinarRegistration[]
 
   @@map("users")
 }
@@ -637,8 +640,10 @@ model Certificate {
   credentialId String   @unique // "METRO-2026-XXXXXX"
   pdfUrl       String?          // generated on-demand
   issuedAt     DateTime @default(now())
+  webinarId    String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webinar Webinar? @relation(fields: [webinarId], references: [id])
 
   @@map("certificates")
 }
@@ -656,6 +661,7 @@ model CertificateTemplate {
 
   bootcamps   Bootcamp[]
   miniCourses MiniCourse[]
+  webinars    Webinar[]
 
   @@map("certificate_templates")
 }
@@ -699,6 +705,8 @@ model Transaction {
   bootcamp  Bootcamp?   @relation(fields: [bootcampId], references: [id])
   course    MiniCourse? @relation(fields: [courseId], references: [id])
   voucher   Voucher?    @relation(fields: [voucherId], references: [id])
+  webinarId String?
+  webinar   Webinar?    @relation(fields: [webinarId], references: [id])
 
   @@map("transactions")
 }
@@ -811,4 +819,53 @@ model HomepageConfig {
   updatedAt    DateTime @updatedAt
 
   @@map("homepage_configs")
+}
+
+// ─────────────────────────────────────────────
+// WEBINAR & WORKSHOP
+// ─────────────────────────────────────────────
+
+model Webinar {
+  id                    String    @id @default(cuid())
+  title                 String
+  slug                  String?   @unique
+  description           String
+  shortDescription      String?
+  speakerName           String
+  speakerRole           String?
+  speakerAvatarUrl      String?
+  field                 Field     @default(FRONTEND)
+  price                 Int       @default(0) // 0 = Gratis
+  bannerUrl             String?
+  scheduledAt           DateTime
+  duration              Int       @default(90) // menit
+  meetingUrl            String?   // Zoom / Google Meet / Youtube Live
+  recordingUrl          String?
+  quota                 Int?      // max peserta, null = unlimited
+  isPublished           Boolean   @default(true)
+  isFeatured            Boolean   @default(false)
+  certificateTemplateId String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  certificateTemplate   CertificateTemplate? @relation(fields: [certificateTemplateId], references: [id])
+  registrations         WebinarRegistration[]
+  certificates          Certificate[]
+  transactions          Transaction[]
+
+  @@map("webinars")
+}
+
+model WebinarRegistration {
+  id           String   @id @default(cuid())
+  webinarId    String
+  userId       String
+  registeredAt DateTime @default(now())
+  attended     Boolean  @default(false)
+
+  webinar Webinar @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, webinarId])
+  @@map("webinar_registrations")
 }

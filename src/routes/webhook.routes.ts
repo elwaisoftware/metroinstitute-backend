@@ -139,6 +139,28 @@ async function handleSuccessfulPayment(tx: {
           data:   { bootcampId: tx.bootcampId },
         },
       })
+    } else if (tx.productType === 'WEBINAR' && (tx as any).webinarId) {
+      const webinarId = (tx as any).webinarId as string
+      const webinar = await prisma.webinar.findUnique({
+        where: { id: webinarId },
+        select: { title: true },
+      })
+
+      await prisma.webinarRegistration.upsert({
+        where:  { userId_webinarId: { userId: tx.userId, webinarId } },
+        create: { userId: tx.userId, webinarId },
+        update: {},
+      })
+
+      await prisma.notification.create({
+        data: {
+          userId: tx.userId,
+          type:   'PURCHASE_SUCCESS',
+          title:  '✅ Pembayaran Berhasil!',
+          body:   `Kamu berhasil mendaftar ke Webinar "${webinar?.title || tx.title}". Sampai jumpa di sesi live! 🎟️`,
+          data:   { webinarId },
+        },
+      })
     }
   } catch (err) {
     logger.error('handleSuccessfulPayment failed', { txId: tx.id, error: err })

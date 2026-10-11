@@ -24,6 +24,7 @@ import { leadRouter } from './routes/lead.routes'
 import { adminRouter } from './routes/admin.routes'
 import { voucherRouter } from './routes/voucher.routes'
 import { menteeRouter } from './routes/mentee.routes'
+import { webinarRouter } from './routes/webinar.routes'
 import { startCronJobs } from './utils/cron'
 
 const app = express()
@@ -107,6 +108,7 @@ app.use(`${PREFIX}/leads`, leadRouter)
 app.use(`${PREFIX}/admin`, adminRouter)
 app.use(`${PREFIX}/voucher`, voucherRouter)
 app.use(`${PREFIX}/mentee`, menteeRouter)
+app.use(`${PREFIX}/webinars`, webinarRouter)
 
 // ── 404 ────────────────────────────────────────────────────
 app.use((req: import('express').Request, res: import('express').Response) => {
