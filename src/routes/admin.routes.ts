@@ -905,7 +905,7 @@ adminRouter.delete('/bunny/video/:videoId', async (req: AuthRequest, res: Respon
       headers: { 'AccessKey': apiKey },
     }).catch(() => {})
 
-    res.json({ success: true, message: 'Video dihapus dari Bunny Stream' })
+    res.json({ success: true, message: 'Video berhasil dihapus' })
   } catch (err) { next(err) }
 })
 
