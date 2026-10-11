@@ -162,8 +162,8 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
 
     // Fallback if no lastProgress found, pick from active enrollments
     if (!continueLearning) {
-      const activeBootcamp = bootcampEnrollments.find(e => e.progress < 100) || bootcampEnrollments[0]
-      const activeCourse = courseEnrollments.find(e => e.progress < 100) || courseEnrollments[0]
+      const activeBootcamp = bootcampEnrollments.find(e => e.progress < 100)
+      const activeCourse = courseEnrollments.find(e => e.progress < 100)
 
       if (activeBootcamp && (!activeCourse || activeBootcamp.updatedAt >= activeCourse.updatedAt)) {
         continueLearning = {

@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction, Request } from 'express'
+import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest, optionalAuth } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
@@ -103,6 +104,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
 
     let isEnrolled = false
     let isWishlisted = false
+    let progress = 0
     if (req.user) {
       const [enrollment, wishlist] = await Promise.all([
         prisma.bootcampEnrollment.findUnique({
@@ -114,6 +116,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
       ])
       isEnrolled = !!enrollment?.isActive
       isWishlisted = !!wishlist
+      progress = enrollment?.progress ?? 0
     }
 
     let computedBatchStatus = bootcamp.batchStatus
@@ -131,7 +134,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
       batchStatus: computedBatchStatus,
       reviews: bootcamp.reviews.map((r) => ({ ...r, comment: r.content })),
       isEnrolled,
-      progress: enrollment?.progress ?? 0,
+      progress,
       isWishlisted,
     }
 
