@@ -1882,6 +1882,14 @@ adminRouter.get('/webinars', async (req: AuthRequest, res: Response, next: NextF
   } catch (err) { next(err) }
 })
 
+const parseWebinarScheduledDate = (dateStr: string) => {
+  const trimmed = dateStr.trim()
+  if (!trimmed.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(trimmed)) {
+    return new Date(`${trimmed.replace(' ', 'T')}+07:00`)
+  }
+  return new Date(trimmed)
+}
+
 // ── POST /admin/webinars ─────────────────────────────────────
 adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -1908,7 +1916,7 @@ adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: Next
     const webinar = await prisma.webinar.create({
       data: {
         ...body,
-        scheduledAt: new Date(body.scheduledAt),
+        scheduledAt: parseWebinarScheduledDate(body.scheduledAt),
       },
     })
 
@@ -1959,7 +1967,7 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
     const body = updateSchema.parse(req.body)
     const updateData: any = { ...body }
     if (body.scheduledAt) {
-      updateData.scheduledAt = new Date(body.scheduledAt)
+      updateData.scheduledAt = parseWebinarScheduledDate(body.scheduledAt)
     }
 
     const webinar = await prisma.webinar.update({
