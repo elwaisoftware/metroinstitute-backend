@@ -844,6 +844,7 @@ model Webinar {
   quota                 Int?      // max peserta, null = unlimited
   isPublished           Boolean   @default(true)
   isFeatured            Boolean   @default(false)
+  isEnded               Boolean   @default(false)
   certificateTemplateId String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

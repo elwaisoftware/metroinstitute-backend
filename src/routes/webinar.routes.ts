@@ -94,6 +94,24 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
     if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
 
     const isRegistered = userId ? ((webinar.registrations as any)?.length > 0) : false
+    const formatAbsoluteUrl = (url?: string | null) => {
+      if (!url) return null
+      const trimmed = url.trim()
+      return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    }
+
+    const scheduledTime = new Date(webinar.scheduledAt).getTime()
+    const bufferBeforeMs = 30 * 60 * 1000 // 30 menit sebelum sesi
+    const openTimeMs = scheduledTime - bufferBeforeMs
+    const nowMs = Date.now()
+
+    // Selesai jika Admin menandai selesai (isEnded = true) atau melewati 24 jam
+    const isEnded = Boolean(webinar.isEnded) || (nowMs > scheduledTime + 24 * 60 * 60 * 1000)
+    const isUpcoming = !isEnded && nowMs < openTimeMs
+    const isLiveWindow = !isEnded && nowMs >= openTimeMs
+
+    // Link meeting aktif selama sesi live (tidak akan mati mendadak jika molor)
+    const canAccessMeeting = isRegistered && isLiveWindow
 
     res.json({
       success: true,
@@ -101,7 +119,10 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
         ...webinar,
         isRegistered,
         registrations: undefined,
-        meetingUrl: isRegistered ? webinar.meetingUrl : null,
+        meetingUrl: canAccessMeeting ? formatAbsoluteUrl(webinar.meetingUrl) : null,
+        recordingUrl: formatAbsoluteUrl(webinar.recordingUrl),
+        liveStatus: isEnded ? 'ENDED' : isLiveWindow ? 'LIVE' : 'UPCOMING',
+        openTime: new Date(openTimeMs).toISOString(),
       },
     })
   } catch (err) { next(err) }

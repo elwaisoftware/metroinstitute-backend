@@ -1952,6 +1952,7 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
       quota: z.number().optional().nullable(),
       isPublished: z.boolean().optional(),
       isFeatured: z.boolean().optional(),
+      isEnded: z.boolean().optional(),
       certificateTemplateId: z.string().optional().nullable(),
     })
 
@@ -1967,6 +1968,23 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
     })
 
     res.json({ success: true, data: webinar })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/webinars/:id/end (Selesaikan / Aktifkan Sesi Webinar) ────
+adminRouter.patch('/webinars/:id/end', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const { isEnded } = req.body
+    const updated = await prisma.webinar.update({
+      where: { id },
+      data: { isEnded: isEnded !== undefined ? Boolean(isEnded) : true },
+    })
+    res.json({
+      success: true,
+      data: updated,
+      message: updated.isEnded ? 'Sesi webinar berhasil diselesaikan' : 'Sesi webinar diaktifkan kembali',
+    })
   } catch (err) { next(err) }
 })
 
