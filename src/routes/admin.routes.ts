@@ -1910,6 +1910,7 @@ adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: Next
       quota: z.number().optional().nullable(),
       isPublished: z.boolean().default(true),
       isFeatured: z.boolean().default(false),
+      benefits: z.array(z.string()).optional().default([]),
       certificateTemplateId: z.string().optional().nullable(),
     }).parse(req.body)
 
@@ -1961,6 +1962,7 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
       isPublished: z.boolean().optional(),
       isFeatured: z.boolean().optional(),
       isEnded: z.boolean().optional(),
+      benefits: z.array(z.string()).optional(),
       certificateTemplateId: z.string().optional().nullable(),
     })
 
