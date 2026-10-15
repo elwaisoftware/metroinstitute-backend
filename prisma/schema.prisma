@@ -845,6 +845,7 @@ model Webinar {
   isPublished           Boolean   @default(true)
   isFeatured            Boolean   @default(false)
   isEnded               Boolean   @default(false)
+  endedAt               DateTime?
   benefits              String[]  @default([])
   certificateTemplateId String?
   createdAt             DateTime  @default(now())

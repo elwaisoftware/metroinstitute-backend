@@ -1962,6 +1962,7 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
       isPublished: z.boolean().optional(),
       isFeatured: z.boolean().optional(),
       isEnded: z.boolean().optional(),
+      endedAt: z.string().optional().nullable(),
       benefits: z.array(z.string()).optional(),
       certificateTemplateId: z.string().optional().nullable(),
     })
@@ -1970,6 +1971,15 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
     const updateData: any = { ...body }
     if (body.scheduledAt) {
       updateData.scheduledAt = parseWebinarScheduledDate(body.scheduledAt)
+    }
+    if (body.isEnded !== undefined) {
+      if (body.isEnded) {
+        updateData.endedAt = body.endedAt ? new Date(body.endedAt) : new Date()
+      } else {
+        updateData.endedAt = null
+      }
+    } else if (body.endedAt !== undefined) {
+      updateData.endedAt = body.endedAt ? new Date(body.endedAt) : null
     }
 
     const webinar = await prisma.webinar.update({
@@ -1986,9 +1996,13 @@ adminRouter.patch('/webinars/:id/end', async (req: AuthRequest, res: Response, n
   try {
     const { id } = req.params as Record<string, string>
     const { isEnded } = req.body
+    const willEnd = isEnded !== undefined ? Boolean(isEnded) : true
     const updated = await prisma.webinar.update({
       where: { id },
-      data: { isEnded: isEnded !== undefined ? Boolean(isEnded) : true },
+      data: {
+        isEnded: willEnd,
+        endedAt: willEnd ? new Date() : null,
+      },
     })
     res.json({
       success: true,

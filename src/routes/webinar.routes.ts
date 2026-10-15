@@ -44,6 +44,7 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
 
     const items = webinars.map((w: any) => ({
       ...w,
+      endedAt: w.endedAt || (w.isEnded ? w.updatedAt : null),
       isRegistered: userId ? (w.registrations?.length > 0) : false,
       registrations: undefined,
       meetingUrl: (userId && w.registrations?.length > 0) ? w.meetingUrl : null,
@@ -113,10 +114,13 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
     // Link meeting aktif selama sesi live (tidak akan mati mendadak jika molor)
     const canAccessMeeting = isRegistered && isLiveWindow
 
+    const effectiveEndedAt = webinar.endedAt || (isEnded ? webinar.updatedAt : null)
+
     res.json({
       success: true,
       data: {
         ...webinar,
+        endedAt: effectiveEndedAt,
         isRegistered,
         registrations: undefined,
         meetingUrl: canAccessMeeting ? formatAbsoluteUrl(webinar.meetingUrl) : null,

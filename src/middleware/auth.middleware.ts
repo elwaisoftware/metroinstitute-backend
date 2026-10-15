@@ -57,8 +57,13 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
       id: string; email: string; role: 'MENTEE' | 'SUPER_ADMIN'; name: string
     }
     req.user = payload
-  } catch {}
-  next()
+    next()
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return next(createError(401, 'Token autentikasi kedaluwarsa'))
+    }
+    next()
+  }
 }
 
 export function requireAdmin(req: AuthRequest, _res: Response, next: NextFunction) {
