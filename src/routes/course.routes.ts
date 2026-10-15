@@ -40,6 +40,12 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
         price: true, thumbnailUrl: true, totalDuration: true, rating: true,
         reviewCount: true, enrollmentCount: true, tags: true,
         isPublished: true, isFeatured: true, certificateTemplateId: true, accessDays: true,
+        _count: {
+          select: {
+            enrollments: true,
+            reviews: true,
+          },
+        },
       },
     })
 
