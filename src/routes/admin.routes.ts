@@ -1859,10 +1859,28 @@ adminRouter.get('/reviews', async (req: AuthRequest, res: Response, next: NextFu
     
     const total = await prisma.review.count({ where });
 
+    const mappedItems = reviews.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      content: r.content,
+      comment: r.content,
+      isHidden: r.isHidden,
+      isVisible: !r.isHidden,
+      productType: r.productType,
+      createdAt: r.createdAt,
+      user: r.user || { name: 'User', email: '-' },
+      product: {
+        id: r.courseId || r.bootcampId || '',
+        title: r.course?.title || r.bootcamp?.title || 'Produk',
+      },
+      course: r.course,
+      bootcamp: r.bootcamp,
+    }));
+
     res.json({ 
       success: true, 
       data: { 
-        items: reviews, 
+        items: mappedItems, 
         pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } 
       } 
     });
