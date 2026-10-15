@@ -66,6 +66,23 @@ userRouter.patch('/me', async (req: AuthRequest, res: Response, next: NextFuncti
   } catch (err) { next(err) }
 })
 
+// ── POST /users/fcm-token (Simpan device token FCM mobile mentee) ───
+userRouter.post('/fcm-token', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { token } = req.body
+    if (!token || typeof token !== 'string') {
+      throw createError(400, 'FCM device token wajib diisi')
+    }
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { fcmToken: token },
+    })
+
+    res.json({ success: true, message: 'FCM token berhasil diperbarui' })
+  } catch (err) { next(err) }
+})
+
 // ── POST /users/me/photo ───────────────────────────────────
 userRouter.post('/me/photo', upload.single('photo'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

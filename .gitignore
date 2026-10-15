@@ -44,3 +44,7 @@ check*.js
 force-update-tx.js
 set_featured.js
 update_db.js
+
+# Firebase service account credentials (JANGAN di-commit)
+*firebase-adminsdk*.json
+serviceAccountKey.json
