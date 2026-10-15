@@ -461,8 +461,8 @@ adminRouter.get('/transactions', async (req: AuthRequest, res: Response, next: N
 adminRouter.post('/broadcast', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { title, body, targetField, targetBadge } = z.object({
-      title:       z.string().min(3).max(100),
-      body:        z.string().min(5).max(500),
+      title:       z.string().min(3).max(150),
+      body:        z.string().min(5).max(3000),
       targetField: z.string().optional(),
       targetBadge: z.string().optional(),
     }).parse(req.body)
