@@ -1197,6 +1197,7 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
         assignmentDescription,
         assignmentDeadline: parsedDeadline,
         orderIndex: count,
+        xpReward: req.body.xpReward !== undefined ? Number(req.body.xpReward) : 10,
         quizOptions: req.body.quizOptions !== undefined ? req.body.quizOptions : undefined
       }
     })
@@ -1412,6 +1413,7 @@ adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
         isFreePreview: data.isPreview || false,
         orderIndex: newOrderIndex,
+        xpReward: data.xpReward !== undefined ? Number(data.xpReward) : 10,
         quizOptions: data.quizOptions !== undefined ? data.quizOptions : undefined,
         assignmentDescription: data.assignmentDescription !== undefined ? data.assignmentDescription : undefined
       }
@@ -1435,6 +1437,7 @@ adminRouter.put('/courses/sessions/:id', async (req: AuthRequest, res: Response,
         videoUrl: data.videoUrl || null,
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
         isFreePreview: data.isPreview || false,
+        xpReward: data.xpReward !== undefined ? Number(data.xpReward) : undefined,
         quizOptions: data.quizOptions !== undefined ? data.quizOptions : undefined,
         assignmentDescription: data.assignmentDescription !== undefined ? data.assignmentDescription : undefined
       }
@@ -1465,6 +1468,96 @@ adminRouter.patch('/courses/:id/featured', async (req: AuthRequest, res: Respons
       select: { id: true, title: true, isFeatured: true },
     })
     res.json({ success: true, data: updated })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/courses/:id/challenges ─────────────────────────
+adminRouter.get('/courses/:id/challenges', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const course = await prisma.miniCourse.findUnique({
+      where: { id },
+      select: { id: true, title: true, field: true, level: true, challengeConfig: true }
+    })
+    if (!course) throw createError(404, 'Mini Course tidak ditemukan')
+
+    const availableChallenges = await prisma.challenge.findMany({
+      where: { field: course.field, level: course.level, isActive: true },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, title: true, description: true, type: true, field: true, level: true, xpReward: true, tags: true }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        course,
+        availableChallenges,
+        assignedConfig: course.challengeConfig || []
+      }
+    })
+  } catch (err) { next(err) }
+})
+
+// ── PUT /admin/courses/:id/challenges ─────────────────────────
+adminRouter.put('/courses/:id/challenges', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const { challenges } = req.body
+
+    const updated = await prisma.miniCourse.update({
+      where: { id },
+      data: {
+        challengeConfig: Array.isArray(challenges) ? challenges : []
+      },
+      select: { id: true, title: true, challengeConfig: true }
+    })
+
+    res.json({ success: true, message: 'Challenge Bank kelas berhasil diperbarui', data: updated })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/bootcamps/:id/challenges ───────────────────────
+adminRouter.get('/bootcamps/:id/challenges', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const bootcamp = await prisma.bootcamp.findUnique({
+      where: { id },
+      select: { id: true, title: true, field: true, level: true, challengeConfig: true }
+    })
+    if (!bootcamp) throw createError(404, 'Bootcamp tidak ditemukan')
+
+    const availableChallenges = await prisma.challenge.findMany({
+      where: { field: bootcamp.field, level: bootcamp.level, isActive: true },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, title: true, description: true, type: true, field: true, level: true, xpReward: true, tags: true }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        bootcamp,
+        availableChallenges,
+        assignedConfig: bootcamp.challengeConfig || []
+      }
+    })
+  } catch (err) { next(err) }
+})
+
+// ── PUT /admin/bootcamps/:id/challenges ───────────────────────
+adminRouter.put('/bootcamps/:id/challenges', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const { challenges } = req.body
+
+    const updated = await prisma.bootcamp.update({
+      where: { id },
+      data: {
+        challengeConfig: Array.isArray(challenges) ? challenges : []
+      },
+      select: { id: true, title: true, challengeConfig: true }
+    })
+
+    res.json({ success: true, message: 'Challenge Bank bootcamp berhasil diperbarui', data: updated })
   } catch (err) { next(err) }
 })
 
@@ -1682,6 +1775,7 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
         liveScheduledAt: scheduledAt !== undefined ? parsedScheduledAt : undefined,
         videoDuration: durationMin !== undefined ? durationMin : undefined,
         attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined,
+        xpReward: req.body.xpReward !== undefined ? Number(req.body.xpReward) : undefined,
         quizOptions: req.body.quizOptions !== undefined ? req.body.quizOptions : undefined
       }
     });

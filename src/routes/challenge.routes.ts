@@ -13,48 +13,91 @@ const COOLDOWN_HOURS = 24  // retry cooldown if failed
 const PASSING_SCORE  = 70  // % minimum to pass
 
 /**
- * Helper: Ambil daftar bidang yang berhak diakses mentee berdasarkan pembelian kelas aktif
- * (Bootcamp Enrollment aktif & Course Enrollment aktif).
+ * Helper: Ambil daftar bidang dan kelas aktif mentee beserta progres belajarnya.
  */
-async function getMenteeEnrolledFields(userId: string) {
+async function getMenteeEnrolledClasses(userId: string) {
   const [bootcampEnrollments, courseEnrollments] = await Promise.all([
     prisma.bootcampEnrollment.findMany({
       where: { userId, isActive: true },
-      include: { bootcamp: { select: { id: true, title: true, field: true } } },
+      include: { bootcamp: { select: { id: true, title: true, field: true, level: true, challengeConfig: true } } },
     }),
     prisma.courseEnrollment.findMany({
       where: { userId, isActive: true, accessUntil: { gt: new Date() } },
-      include: { course: { select: { id: true, title: true, field: true } } },
+      include: { course: { select: { id: true, title: true, field: true, level: true, challengeConfig: true } } },
     }),
   ])
 
   const fieldSet = new Set<string>()
-  const purchasedClasses: Array<{ id: string; title: string; type: 'BOOTCAMP' | 'MINI_COURSE'; field: string }> = []
+  const purchasedClasses: Array<{
+    id: string
+    title: string
+    type: 'BOOTCAMP' | 'MINI_COURSE'
+    field: string
+    level: string
+    challengeConfig: Array<{ challengeId: string; unlockAtProgress: number }>
+    progressPct: number
+  }> = []
 
   for (const be of bootcampEnrollments) {
-    const f = be.bootcamp?.field || be.field
+    if (!be.bootcamp) continue
+    const f = be.bootcamp.field
     if (f) fieldSet.add(f)
-    if (be.bootcamp) {
-      purchasedClasses.push({
-        id: be.bootcamp.id,
-        title: be.bootcamp.title,
-        type: 'BOOTCAMP',
-        field: f,
-      })
-    }
+
+    const totalSessions = await prisma.bootcampSession.count({
+      where: { chapter: { bootcampId: be.bootcamp.id } }
+    })
+    const completedSessions = totalSessions > 0 ? await prisma.sessionProgress.count({
+      where: {
+        userId,
+        bootcampSession: { chapter: { bootcampId: be.bootcamp.id } },
+        isCompleted: true
+      }
+    }) : 0
+    const progressPct = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0
+
+    const rawConfig = be.bootcamp.challengeConfig
+    const challengeConfig = Array.isArray(rawConfig) ? (rawConfig as any) : []
+
+    purchasedClasses.push({
+      id: be.bootcamp.id,
+      title: be.bootcamp.title,
+      type: 'BOOTCAMP',
+      field: f,
+      level: be.bootcamp.level,
+      challengeConfig,
+      progressPct
+    })
   }
 
   for (const ce of courseEnrollments) {
-    const f = ce.course?.field
+    if (!ce.course) continue
+    const f = ce.course.field
     if (f) fieldSet.add(f)
-    if (ce.course) {
-      purchasedClasses.push({
-        id: ce.course.id,
-        title: ce.course.title,
-        type: 'MINI_COURSE',
-        field: f,
-      })
-    }
+
+    const totalSessions = await prisma.courseSession.count({
+      where: { chapter: { courseId: ce.course.id } }
+    })
+    const completedSessions = totalSessions > 0 ? await prisma.sessionProgress.count({
+      where: {
+        userId,
+        courseSession: { chapter: { courseId: ce.course.id } },
+        isCompleted: true
+      }
+    }) : 0
+    const progressPct = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0
+
+    const rawConfig = ce.course.challengeConfig
+    const challengeConfig = Array.isArray(rawConfig) ? (rawConfig as any) : []
+
+    purchasedClasses.push({
+      id: ce.course.id,
+      title: ce.course.title,
+      type: 'MINI_COURSE',
+      field: f,
+      level: ce.course.level,
+      challengeConfig,
+      progressPct
+    })
   }
 
   return {
@@ -131,10 +174,10 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
       return res.json({ success: true, data: items })
     }
 
-    // ── Mentee Flow: Hanya bisa diakses jika sudah membeli kelas ──
-    const { accessibleFields, purchasedClasses } = await getMenteeEnrolledFields(userId)
+    // ── Mentee Flow: Berdasarkan Kelas yang Dibeli & Terbuka Bertahap ──
+    const { accessibleFields, purchasedClasses } = await getMenteeEnrolledClasses(userId)
 
-    if (accessibleFields.length === 0) {
+    if (accessibleFields.length === 0 || purchasedClasses.length === 0) {
       return res.json({
         success: true,
         hasAccess: false,
@@ -145,35 +188,90 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
       })
     }
 
-    const where: Record<string, unknown> = {
-      isActive: true,
-    }
+    // Map: challengeId -> { unlockAtProgress, classTitle, classProgress, isLocked }
+    const classChallengeMap = new Map<string, { unlockAtProgress: number; classTitle: string; classProgress: number; isLocked: boolean }>()
+    const targetChallengeIds: string[] = []
+    let hasExplicitConfig = false
 
-    if (field) {
-      // Mentee filtering by field: verify it belongs to accessible fields
-      if (accessibleFields.includes(field)) {
-        where.field = field
-      } else {
-        where.field = 'NON_EXISTENT' // return empty if mentee filters field they haven't purchased
+    for (const cls of purchasedClasses) {
+      if (cls.challengeConfig && cls.challengeConfig.length > 0) {
+        hasExplicitConfig = true
+        for (const cfg of cls.challengeConfig) {
+          if (!cfg.challengeId) continue
+          const unlockAt = cfg.unlockAtProgress ?? 0
+          const isLocked = cls.progressPct < unlockAt
+          const existing = classChallengeMap.get(cfg.challengeId)
+          if (!existing || (existing.isLocked && !isLocked)) {
+            classChallengeMap.set(cfg.challengeId, {
+              unlockAtProgress: unlockAt,
+              classTitle: cls.title,
+              classProgress: cls.progressPct,
+              isLocked,
+            })
+          }
+          if (!targetChallengeIds.includes(cfg.challengeId)) {
+            targetChallengeIds.push(cfg.challengeId)
+          }
+        }
       }
-    } else {
-      // Show all challenges belonging to purchased classes
-      where.field = { in: accessibleFields }
     }
 
-    if (level)  where.level  = level
-    if (type)   where.type   = type
-    if (search) where.title  = { contains: String(search), mode: 'insensitive' }
+    let challenges: any[] = []
 
-    const challenges = await prisma.challenge.findMany({
-      where,
-      orderBy: [{ field: 'asc' }, { level: 'asc' }, { createdAt: 'desc' }],
-      select: {
-        id: true, title: true, description: true, type: true,
-        field: true, level: true, xpReward: true, tags: true,
-        timeLimitSec: true,
-      },
-    })
+    if (hasExplicitConfig && targetChallengeIds.length > 0) {
+      const where: Record<string, unknown> = {
+        id: { in: targetChallengeIds },
+        isActive: true,
+      }
+      if (field) where.field = field
+      if (level) where.level = level
+      if (type)  where.type  = type
+      if (search) where.title = { contains: String(search), mode: 'insensitive' }
+
+      challenges = await prisma.challenge.findMany({
+        where,
+        orderBy: [{ field: 'asc' }, { level: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          id: true, title: true, description: true, type: true,
+          field: true, level: true, xpReward: true, tags: true,
+          timeLimitSec: true,
+        },
+      })
+    } else {
+      // Fallback: Jika admin belum memilihkan spesifik challenge untuk kelas ini,
+      // tampilkan challenge yang sesuai dengan bidang dan level kelas yang dibeli mentee
+      const classLevels = purchasedClasses.map((c) => c.level)
+      const where: Record<string, unknown> = {
+        isActive: true,
+        field: field && accessibleFields.includes(field) ? field : { in: accessibleFields },
+        level: level ? level : { in: classLevels },
+      }
+      if (type)  where.type   = type
+      if (search) where.title  = { contains: String(search), mode: 'insensitive' }
+
+      challenges = await prisma.challenge.findMany({
+        where,
+        orderBy: [{ field: 'asc' }, { level: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          id: true, title: true, description: true, type: true,
+          field: true, level: true, xpReward: true, tags: true,
+          timeLimitSec: true,
+        },
+      })
+
+      // Auto-unlock bertahap (0%, 25%, 50%, 75%...)
+      challenges.forEach((ch, idx) => {
+        const matchingClass = purchasedClasses.find((c) => c.field === ch.field) || purchasedClasses[0]
+        const autoUnlockAt = Math.min(100, Math.floor((idx / Math.max(1, challenges.length)) * 100))
+        const isLocked = (matchingClass?.progressPct ?? 0) < autoUnlockAt
+        classChallengeMap.set(ch.id, {
+          unlockAtProgress: autoUnlockAt,
+          classTitle: matchingClass?.title || 'Kelas Terdaftar',
+          classProgress: matchingClass?.progressPct ?? 0,
+          isLocked,
+        })
+      })
+    }
 
     // User attempts per challenge
     const attempts = await prisma.challengeAttempt.findMany({
@@ -192,11 +290,11 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
       const chAttempts = attemptsByChallenge.get(ch.id) || []
       const hasPassed = chAttempts.some((a) => a.isCorrect === true)
       const latest = chAttempts[0]
+      const classInfo = classChallengeMap.get(ch.id)
 
       let cooldownUntil: Date | null = null
       let cooldownHoursLeft: number | undefined
 
-      // Cooldown only applies if user has NOT completed/passed this challenge before
       if (!hasPassed && latest && !latest.isCorrect && latest.canRetryAt) {
         if (latest.canRetryAt > new Date()) {
           cooldownUntil = latest.canRetryAt
@@ -210,6 +308,10 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
         xpClaimed: hasPassed,
         cooldownHoursLeft,
         cooldownUntil,
+        isLocked: classInfo ? classInfo.isLocked : false,
+        unlockAtProgress: classInfo?.unlockAtProgress ?? 0,
+        linkedClassName: classInfo?.classTitle,
+        currentClassProgress: classInfo?.classProgress ?? 0,
       }
     })
 
@@ -224,7 +326,7 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
 })
 
 // ── GET /challenges/:id ────────────────────────────────────
-// Returns challenge detail. Checks enrollment for mentee and strips isCorrect.
+// Returns challenge detail. Checks enrollment for mentee, lock status, and strips isCorrect.
 challengeRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id
@@ -236,11 +338,33 @@ challengeRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFu
     })
     if (!challenge) throw createError(404, 'Challenge tidak ditemukan')
 
-    // If not admin, check if mentee is enrolled in this field
+    // If not admin, check if mentee is enrolled and progress is sufficient
     if (!isAdmin) {
-      const { accessibleFields } = await getMenteeEnrolledFields(userId)
+      const { accessibleFields, purchasedClasses } = await getMenteeEnrolledClasses(userId)
       if (!accessibleFields.includes(challenge.field)) {
         throw createError(403, `Tantangan ini hanya dapat diakses setelah membeli Bootcamp atau Mini Course di bidang ${challenge.field}.`)
+      }
+
+      // Check whether this challenge is locked by progress
+      let isLocked = false
+      let lockReason = ''
+      for (const cls of purchasedClasses) {
+        if (cls.challengeConfig && cls.challengeConfig.length > 0) {
+          const cfg = cls.challengeConfig.find((c: any) => c.challengeId === challenge.id)
+          if (cfg) {
+            const unlockAt = cfg.unlockAtProgress ?? 0
+            if (cls.progressPct < unlockAt) {
+              isLocked = true
+              lockReason = `Tantangan ini terkunci. Selesaikan materi ${cls.title} hingga ${unlockAt}% untuk membukanya (progres saat ini: ${cls.progressPct}%).`
+            } else {
+              isLocked = false
+              break
+            }
+          }
+        }
+      }
+      if (isLocked) {
+        throw createError(403, lockReason)
       }
     }
 
@@ -318,11 +442,32 @@ challengeRouter.post('/:id/submit', async (req: AuthRequest, res: Response, next
     })
     if (!challenge) throw createError(404, 'Challenge tidak ditemukan')
 
-    // Check enrollment for mentee
+    // Check enrollment and lock for mentee
     if (!isAdmin) {
-      const { accessibleFields } = await getMenteeEnrolledFields(userId)
+      const { accessibleFields, purchasedClasses } = await getMenteeEnrolledClasses(userId)
       if (!accessibleFields.includes(challenge.field)) {
         throw createError(403, `Kamu harus membeli Bootcamp atau Mini Course di bidang ${challenge.field} untuk mengerjakan tantangan ini.`)
+      }
+
+      let isLocked = false
+      let lockReason = ''
+      for (const cls of purchasedClasses) {
+        if (cls.challengeConfig && cls.challengeConfig.length > 0) {
+          const cfg = cls.challengeConfig.find((c: any) => c.challengeId === challenge.id)
+          if (cfg) {
+            const unlockAt = cfg.unlockAtProgress ?? 0
+            if (cls.progressPct < unlockAt) {
+              isLocked = true
+              lockReason = `Tantangan ini terkunci. Selesaikan materi ${cls.title} hingga ${unlockAt}% untuk membukanya.`
+            } else {
+              isLocked = false
+              break
+            }
+          }
+        }
+      }
+      if (isLocked) {
+        throw createError(403, lockReason)
       }
     }
 

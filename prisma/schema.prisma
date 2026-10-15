@@ -249,6 +249,7 @@ model Bootcamp {
   enrollmentCount      Int         @default(0)
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
+  challengeConfig      Json?
 
   chapters      BootcampChapter[]
   enrollments   BootcampEnrollment[]
@@ -372,6 +373,7 @@ model MiniCourse {
 
   certificateTemplateId String?
   certificateTemplate CertificateTemplate? @relation(fields: [certificateTemplateId], references: [id])
+  challengeConfig       Json?
 
   @@map("mini_courses")
 }

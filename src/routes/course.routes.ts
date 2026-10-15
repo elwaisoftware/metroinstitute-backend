@@ -270,7 +270,8 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
 
     // XP — use VIDEO_COMPLETE for video sessions
     const xpSource = session.type === 'VIDEO' ? 'VIDEO_COMPLETE' : 'ASSIGNMENT_GRADED'
-    const xpEarned = await grantXp(userId, xpSource, `Sesi: ${session.title}`, session.xpReward)
+    const xpAmount = session.xpReward > 0 ? session.xpReward : 10
+    const xpEarned = await grantXp(userId, xpSource, `Sesi: ${session.title}`, xpAmount)
     await updateBadge(userId)
 
     // Recalculate progress

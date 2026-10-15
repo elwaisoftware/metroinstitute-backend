@@ -287,7 +287,8 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
 
     // Grant XP
     const xpSource = session.type === 'LIVE' ? 'LIVE_ATTEND' : 'VIDEO_COMPLETE'
-    const xpEarned = await grantXp(userId, xpSource, `Bootcamp sesi: ${session.title}`, session.xpReward)
+    const xpAmount = session.xpReward > 0 ? session.xpReward : 10
+    const xpEarned = await grantXp(userId, xpSource, `Bootcamp sesi: ${session.title}`, xpAmount)
     await updateBadge(userId)
 
     // Recalculate bootcamp progress

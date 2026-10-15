@@ -10,7 +10,7 @@ import { logger } from './logger'
 export async function grantXp(userId: string, source: XpSource, note?: string, customAmount?: number): Promise<number> {
   try {
     let amount = customAmount
-    if (amount === undefined) {
+    if (amount === undefined || amount <= 0) {
       const config = await prisma.xpConfig.findUnique({ where: { source } })
       if (!config) return 0
       amount = config.amount
