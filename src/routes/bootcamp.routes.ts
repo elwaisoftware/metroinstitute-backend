@@ -227,9 +227,20 @@ bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthReques
     const completedIds = new Set(completedProgress.map((p) => p.bootcampSessionId))
 
     // User's submission for this session
+    // User's submission for this session
     const assignment = session.type === 'ASSIGNMENT'
       ? await prisma.assignment.findFirst({ where: { userId, bootcampSessionId: sessionId }, orderBy: { submittedAt: 'desc' } })
       : null
+
+    // Attendance record for live session
+    const liveAttendance = session.type === 'LIVE'
+      ? await prisma.liveAttendance.findUnique({
+          where: { sessionId_userId: { sessionId, userId } },
+        })
+      : null
+
+    const sessionDurationMin = session.videoDuration ? Math.ceil(session.videoDuration / 60) : 90
+    const minRequiredMinutes = Math.ceil(sessionDurationMin * 0.8)
 
     const totalSessions = allSessions.length
     const progress = totalSessions > 0 ? Math.round((completedIds.size / totalSessions) * 100) : 0
@@ -246,6 +257,19 @@ bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthReques
           ...session,
           isCompleted: completedIds.has(sessionId),
           assignment,
+          attendance: liveAttendance ? {
+            id: liveAttendance.id,
+            status: liveAttendance.status,
+            durationMinutes: liveAttendance.durationMinutes,
+            sessionDurationMinutes: sessionDurationMin,
+            minRequiredMinutes,
+            joinTime: liveAttendance.joinTime,
+            leaveTime: liveAttendance.leaveTime,
+            source: liveAttendance.source,
+            markedByAdmin: liveAttendance.markedByAdmin,
+            adminNotes: liveAttendance.adminNotes,
+            attendedAt: liveAttendance.attendedAt,
+          } : null,
         },
         prevSessionId: idx > 0 ? allSessions[idx - 1].id : null,
         nextSessionId: idx < allSessions.length - 1 ? allSessions[idx + 1].id : null,
@@ -333,3 +357,141 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
     res.json({ success: true, data: { xpEarned, progress } })
   } catch (err) { next(err) }
 })
+
+// ── GET /bootcamps/:bootcampId/my-attendance ────────────────
+// Mengambil data lengkap rekap kehadiran & kelayakan sertifikat untuk mentee yang login
+bootcampRouter.get('/:bootcampId/my-attendance', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { bootcampId } = req.params as Record<string, string>
+    const userId = req.user!.id
+
+    const enrollment = await prisma.bootcampEnrollment.findUnique({
+      where: { userId_bootcampId: { userId, bootcampId } },
+      include: {
+        bootcamp: { select: { id: true, title: true } },
+      },
+    })
+    if (!enrollment?.isActive) throw createError(403, 'Kamu belum terdaftar di bootcamp ini')
+
+    // Ambil seluruh chapters & sessions
+    const chapters = await prisma.bootcampChapter.findMany({
+      where: { bootcampId },
+      orderBy: { orderIndex: 'asc' },
+      include: {
+        sessions: {
+          orderBy: { orderIndex: 'asc' },
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            videoDuration: true,
+            liveScheduledAt: true,
+            orderIndex: true,
+          },
+        },
+      },
+    })
+
+    const allSessions = chapters.flatMap((ch) =>
+      ch.sessions.map((s) => ({ ...s, chapterTitle: ch.title }))
+    )
+
+    // Progress list
+    const completedProgress = await prisma.sessionProgress.findMany({
+      where: {
+        userId,
+        bootcampSessionId: { in: allSessions.map((s) => s.id) },
+        isCompleted: true,
+      },
+      select: { bootcampSessionId: true },
+    })
+    const completedIds = new Set(completedProgress.map((p) => p.bootcampSessionId))
+
+    // Live attendances
+    const attendances = await prisma.liveAttendance.findMany({
+      where: {
+        userId,
+        sessionId: { in: allSessions.map((s) => s.id) },
+      },
+    })
+    const attendanceMap = new Map(attendances.map((a) => [a.sessionId, a]))
+
+    // Certificate
+    const cert = await prisma.certificate.findFirst({
+      where: { userId, bootcampId },
+      select: { id: true, credentialId: true, issuedAt: true },
+    })
+
+    const sessionsData = allSessions.map((s) => {
+      const isCompleted = completedIds.has(s.id)
+      const durationMin = s.videoDuration ? Math.ceil(s.videoDuration / 60) : 90
+      const minRequiredMin = Math.ceil(durationMin * 0.8)
+      const att = attendanceMap.get(s.id)
+
+      let attendanceStatus = 'NOT_RECORDED'
+      if (att) {
+        attendanceStatus = att.status
+      } else if (s.type === 'LIVE' && s.liveScheduledAt && new Date(s.liveScheduledAt) < new Date()) {
+        attendanceStatus = 'ABSENT'
+      }
+
+      return {
+        id: s.id,
+        chapterTitle: s.chapterTitle,
+        title: s.title,
+        type: s.type,
+        orderIndex: s.orderIndex,
+        liveScheduledAt: s.liveScheduledAt,
+        durationMinutes: durationMin,
+        minRequiredMinutes: minRequiredMin,
+        isCompleted,
+        attendance: att ? {
+          status: att.status,
+          durationMinutes: att.durationMinutes,
+          minRequiredMinutes: minRequiredMin,
+          joinTime: att.joinTime,
+          leaveTime: att.leaveTime,
+          adminNotes: att.adminNotes,
+          source: att.source,
+        } : (s.type === 'LIVE' ? {
+          status: attendanceStatus,
+          durationMinutes: 0,
+          minRequiredMinutes: minRequiredMin,
+          joinTime: null,
+          leaveTime: null,
+          adminNotes: null,
+          source: 'GOOGLE_MEET_API',
+        } : null),
+      }
+    })
+
+    const totalSessions = allSessions.length
+    const attendedCount = completedIds.size
+    const missingSessions = sessionsData.filter((s) => !s.isCompleted)
+    const allSessionsAttended = totalSessions > 0 && attendedCount === totalSessions
+
+    res.json({
+      success: true,
+      data: {
+        bootcamp: enrollment.bootcamp,
+        progress: enrollment.progress,
+        totalSessions,
+        attendedCount,
+        allSessionsAttended,
+        certificate: {
+          isUnlocked: allSessionsAttended || Boolean(cert),
+          credentialId: cert?.credentialId || null,
+          issuedAt: cert?.issuedAt || null,
+        },
+        missingSessions: missingSessions.map((s) => ({
+          id: s.id,
+          title: s.title,
+          chapterTitle: s.chapterTitle,
+          type: s.type,
+        })),
+        sessions: sessionsData,
+      },
+    })
+  } catch (err) { next(err) }
+})
+

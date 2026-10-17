@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import crypto from 'crypto'
 import { prisma } from '../utils/prisma'
 import { logger } from '../utils/logger'
+import { processGoogleMeetAttendance, GoogleMeetParticipant } from '../services/attendance.service'
 
 export const webhookRouter = Router()
 
@@ -166,3 +167,89 @@ async function handleSuccessfulPayment(tx: {
     logger.error('handleSuccessfulPayment failed', { txId: tx.id, error: err })
   }
 }
+
+// ── POST /webhook/google-meet ──────────────────────────────
+// Dipanggil otomatis oleh Google Meet API saat sesi meeting selesai.
+// Google mengirimkan event "meeting.ended" beserta data kehadiran peserta.
+//
+// Untuk keamanan, kita verifikasi request menggunakan header Authorization
+// yang berisi token rahasia (GOOGLE_MEET_WEBHOOK_SECRET di environment variable).
+//
+// Format body yang diterima dari Google Meet API:
+// {
+//   "eventType": "meeting.ended",
+//   "conferenceId": "abc-defg-hij",
+//   "sessionId": "<bootcamp_session_id>",   // kita set saat buat link Meet
+//   "participants": [
+//     { "email": "...", "displayName": "...", "durationMinutes": 88, "joinTime": "...", "leaveTime": "..." }
+//   ]
+// }
+webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
+  try {
+    // ── Verifikasi token keamanan ──────────────────────────
+    const authHeader = req.headers['authorization'] || ''
+    const expectedToken = process.env.GOOGLE_MEET_WEBHOOK_SECRET || ''
+
+    if (!expectedToken) {
+      logger.error('GOOGLE_MEET_WEBHOOK_SECRET belum di-set di environment variable')
+      return res.status(500).json({ success: false, message: 'Server configuration error' })
+    }
+
+    if (authHeader !== `Bearer ${expectedToken}`) {
+      logger.warn('Google Meet webhook: token tidak valid', { ip: req.ip })
+      return res.status(401).json({ success: false, message: 'Unauthorized' })
+    }
+
+    let body = req.body
+    if (Buffer.isBuffer(body)) body = JSON.parse(body.toString('utf8'))
+
+    const { eventType, conferenceId, sessionId, participants } = body
+
+    // Hanya proses event saat meeting selesai
+    if (eventType !== 'meeting.ended') {
+      return res.json({ success: true, message: `Event ${eventType} diabaikan` })
+    }
+
+    if (!sessionId || !conferenceId || !Array.isArray(participants)) {
+      logger.warn('Google Meet webhook: payload tidak lengkap', { body })
+      return res.status(400).json({ success: false, message: 'Payload tidak lengkap: sessionId, conferenceId, participants wajib ada' })
+    }
+
+    // Validasi sessionId ada di database
+    const session = await prisma.bootcampSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, title: true, type: true },
+    })
+
+    if (!session) {
+      logger.warn('Google Meet webhook: sessionId tidak ditemukan', { sessionId })
+      return res.status(404).json({ success: false, message: `Session ${sessionId} tidak ditemukan` })
+    }
+
+    if (session.type !== 'LIVE') {
+      return res.status(400).json({ success: false, message: 'Sesi ini bukan tipe LIVE' })
+    }
+
+    logger.info('Google Meet webhook diterima', {
+      conferenceId,
+      sessionId,
+      participantCount: participants.length,
+    })
+
+    // ── Proses kehadiran secara otomatis ──────────────────
+    const result = await processGoogleMeetAttendance(
+      sessionId,
+      conferenceId,
+      participants as GoogleMeetParticipant[]
+    )
+
+    return res.json({
+      success: true,
+      message: 'Data kehadiran berhasil diproses',
+      data: result,
+    })
+  } catch (err) {
+    logger.error('Google Meet webhook error', { error: err })
+    return res.status(500).json({ success: false, message: 'Gagal memproses data kehadiran' })
+  }
+})

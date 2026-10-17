@@ -102,7 +102,8 @@ enum ChallengeType {
 enum AttendanceStatus {
   PRESENT
   ABSENT
-  MANUAL
+  EXCUSED    // Izin disetujui oleh admin
+  MANUAL     // Di-input manual oleh admin
 }
 
 // ─────────────────────────────────────────────
@@ -154,9 +155,11 @@ model User {
   wishlistItems       WishlistItem[]
   leaderboardEntries  LeaderboardSnapshot[]
   webinarRegistrations WebinarRegistration[]
+  liveAttendances     LiveAttendance[]
 
   @@map("users")
 }
+
 
 model UserSession {
   id           String   @id @default(cuid())
@@ -333,11 +336,18 @@ model LiveAttendance {
   sessionId       String
   userId          String
   status          AttendanceStatus @default(PRESENT)
+  durationMinutes Int              @default(0)   // total menit aktif di Google Meet
+  joinTime        DateTime?                       // jam pertama masuk Meet
+  leaveTime       DateTime?                       // jam terakhir keluar Meet
+  source          String           @default("GOOGLE_MEET_API") // GOOGLE_MEET_API | MANUAL
+  googleMeetId    String?                         // conference ID dari Google Meet
   attendedAt      DateTime         @default(now())
   markedByAdmin   Boolean          @default(false)
+  adminNotes      String?                         // alasan override/izin
 
   session BootcampSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([sessionId, userId])
   @@map("live_attendances")
 }

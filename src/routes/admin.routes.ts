@@ -4,6 +4,7 @@ import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { WhatsAppService } from '../services/whatsapp.service'
+import { getSessionAttendanceDetails, updateAttendanceStatus } from '../services/attendance.service'
 import multer from 'multer'
 import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
@@ -2205,5 +2206,48 @@ adminRouter.delete('/webinars/:id/participants/:regId', async (req: AuthRequest,
     res.json({ success: true, message: 'Peserta berhasil dihapus dari webinar' })
   } catch (err) { next(err) }
 })
+
+// ── GET /admin/bootcamps/sessions/:sessionId/attendance ──────
+// Mengambil rekap presensi sesi Google Meet lengkap
+const handleGetSessionAttendance = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params as Record<string, string>
+    const data = await getSessionAttendanceDetails(sessionId)
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+adminRouter.get('/bootcamps/sessions/:sessionId/attendance', handleGetSessionAttendance)
+adminRouter.get('/bootcamps/:bootcampId/sessions/:sessionId/attendance', handleGetSessionAttendance)
+
+// ── PATCH /admin/bootcamps/sessions/:sessionId/attendance/:userId ─
+// Override manual presensi oleh admin (misal izin sakit atau koreksi)
+const handleUpdateSessionAttendance = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId, userId } = req.params as Record<string, string>
+    const { status, adminNotes, durationMinutes } = req.body
+
+    const validStatuses = ['PRESENT', 'ABSENT', 'EXCUSED', 'MANUAL']
+    if (!validStatuses.includes(status)) {
+      throw createError(400, `Status tidak valid. Harus salah satu dari: ${validStatuses.join(', ')}`)
+    }
+
+    const attendance = await updateAttendanceStatus(sessionId, userId, {
+      status,
+      adminNotes: adminNotes ? String(adminNotes).trim() : undefined,
+      durationMinutes: durationMinutes !== undefined ? Number(durationMinutes) : undefined,
+    })
+
+    res.json({
+      success: true,
+      message: 'Status presensi berhasil diperbarui',
+      data: attendance,
+    })
+  } catch (err) { next(err) }
+}
+
+adminRouter.patch('/bootcamps/sessions/:sessionId/attendance/:userId', handleUpdateSessionAttendance)
+adminRouter.patch('/bootcamps/:bootcampId/sessions/:sessionId/attendance/:userId', handleUpdateSessionAttendance)
+
 
 
