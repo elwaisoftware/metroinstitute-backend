@@ -30,6 +30,9 @@ import { startCronJobs } from './utils/cron'
 const app = express()
 const PORT = process.env.PORT || 5000
 
+// ── Trust Proxy for Railway/Reverse Proxy ──────────────────
+app.set('trust proxy', 1)
+
 // ── Security ───────────────────────────────────────────────
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
@@ -55,12 +58,14 @@ const globalLimit = rateLimit({
   message: { success: false, message: 'Terlalu banyak request, coba lagi dalam beberapa menit.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 })
 
 const authLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { success: false, message: 'Terlalu banyak percobaan login, coba lagi dalam 15 menit.' },
+  validate: { xForwardedForHeader: false },
 })
 
 app.use(globalLimit)
