@@ -1,6 +1,7 @@
 import { prisma } from '../utils/prisma'
 import { logger } from '../utils/logger'
 import { grantXp } from '../utils/xp'
+import { AttendanceStatus } from '@prisma/client'
 
 // ── Threshold: minimum persentase durasi untuk dianggap HADIR ──────────
 const ATTENDANCE_THRESHOLD_PCT = 0.80 // 80%
@@ -471,5 +472,352 @@ export async function getSessionAttendanceDetails(sessionId: string) {
       attendanceRate,
     },
     attendees,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WEBINAR ATTENDANCE, XP & CERTIFICATES (GOOGLE MEET)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Auto-terbitkan sertifikat webinar jika mentee memenuhi syarat kehadiran.
+ */
+export async function issueWebinarCertificate(userId: string, webinarId: string) {
+  try {
+    const existingCert = await prisma.certificate.findFirst({
+      where: { userId, webinarId },
+    })
+
+    if (existingCert) return existingCert
+
+    const webinar = await prisma.webinar.findUnique({
+      where: { id: webinarId },
+      select: { title: true },
+    })
+
+    const credentialId = `METRO-WEB-${Date.now().toString(36).toUpperCase()}`
+    const cert = await prisma.certificate.create({
+      data: {
+        userId,
+        webinarId,
+        productType: 'WEBINAR',
+        credentialId,
+      },
+    })
+
+    await prisma.notification.create({
+      data: {
+        userId,
+        type: 'BADGE_UPGRADE',
+        title: '🎓 Selamat! Sertifikat Webinar Diterbitkan',
+        body: `Kehadiranmu di webinar "${webinar?.title || 'Metro Institute'}" telah terverifikasi! E-Sertifikatmu siap diunduh.`,
+        data: { credentialId, webinarId },
+      },
+    }).catch(() => {})
+
+    return cert
+  } catch (err) {
+    logger.error('issueWebinarCertificate failed', { userId, webinarId, error: err })
+    return null
+  }
+}
+
+/**
+ * Proses data kehadiran Google Meet untuk WEBINAR.
+ */
+export async function processWebinarAttendance(
+  webinarId: string,
+  conferenceId: string,
+  participants: GoogleMeetParticipant[]
+) {
+  const webinar = await prisma.webinar.findUnique({
+    where: { id: webinarId },
+  })
+
+  if (!webinar) {
+    throw new Error(`Webinar dengan ID ${webinarId} tidak ditemukan`)
+  }
+
+  const sessionDuration = webinar.duration || 90
+  const thresholdPct = (webinar.attendanceThresholdPct || 80) / 100
+  const minRequiredMinutes = Math.round(sessionDuration * thresholdPct)
+  const xpReward = webinar.xpReward || 25
+
+  const results: any[] = []
+
+  for (const p of participants) {
+    const cleanEmail = p.email?.trim().toLowerCase()
+    if (!cleanEmail) continue
+
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+    })
+
+    if (!user) {
+      results.push({ email: cleanEmail, status: 'UNREGISTERED_EMAIL' })
+      continue
+    }
+
+    const durationMinutes = Math.max(0, Math.round(p.durationMinutes || 0))
+    const isMetThreshold = durationMinutes >= minRequiredMinutes
+    const status: AttendanceStatus = isMetThreshold ? 'PRESENT' : 'ABSENT'
+
+    // Upsert WebinarRegistration
+    await prisma.webinarRegistration.upsert({
+      where: { userId_webinarId: { userId: user.id, webinarId } },
+      create: {
+        userId: user.id,
+        webinarId,
+        attended: isMetThreshold,
+        attendanceStatus: status,
+        durationMinutes,
+        joinTime: p.joinTime ? new Date(p.joinTime) : null,
+        leaveTime: p.leaveTime ? new Date(p.leaveTime) : null,
+        googleMeetId: conferenceId,
+        xpAwarded: isMetThreshold ? xpReward : 0,
+      },
+      update: {
+        attended: isMetThreshold,
+        attendanceStatus: status,
+        durationMinutes,
+        joinTime: p.joinTime ? new Date(p.joinTime) : undefined,
+        leaveTime: p.leaveTime ? new Date(p.leaveTime) : undefined,
+        googleMeetId: conferenceId,
+        xpAwarded: isMetThreshold ? xpReward : 0,
+      },
+    })
+
+    // Berikan XP & Sertifikat jika Hadir
+    if (isMetThreshold) {
+      await grantXp(user.id, 'LIVE_ATTEND', `Hadir Webinar: ${webinar.title}`, xpReward).catch(() => {})
+      await issueWebinarCertificate(user.id, webinarId)
+    }
+
+    results.push({
+      userId: user.id,
+      email: cleanEmail,
+      status,
+      durationMinutes,
+      certificateIssued: isMetThreshold,
+      xpAwarded: isMetThreshold ? xpReward : 0,
+    })
+  }
+
+  // Tandai peserta terdaftar lainnya yang tidak masuk ke Meet sebagai ABSENT
+  const allRegistrations = await prisma.webinarRegistration.findMany({
+    where: { webinarId },
+  })
+
+  for (const r of allRegistrations) {
+    if (r.durationMinutes === 0 && !r.markedByAdmin) {
+      await prisma.webinarRegistration.update({
+        where: { id: r.id },
+        data: {
+          attendanceStatus: 'ABSENT',
+          attended: false,
+        },
+      })
+    }
+  }
+
+  return {
+    webinarId,
+    conferenceId,
+    minRequiredMinutes,
+    totalProcessed: results.length,
+    results,
+  }
+}
+
+/**
+ * Admin override status presensi peserta webinar
+ */
+export async function overrideWebinarAttendance(
+  webinarId: string,
+  userId: string,
+  newStatus: AttendanceStatus,
+  adminNotes?: string
+) {
+  const webinar = await prisma.webinar.findUnique({
+    where: { id: webinarId },
+  })
+  if (!webinar) throw new Error('Webinar tidak ditemukan')
+
+  const xpReward = webinar.xpReward || 25
+  const isPresent = newStatus === 'PRESENT' || newStatus === 'MANUAL' || newStatus === 'EXCUSED'
+
+  const reg = await prisma.webinarRegistration.upsert({
+    where: { userId_webinarId: { userId, webinarId } },
+    create: {
+      userId,
+      webinarId,
+      attended: isPresent,
+      attendanceStatus: newStatus,
+      durationMinutes: isPresent ? (webinar.duration || 90) : 0,
+      markedByAdmin: true,
+      adminNotes: adminNotes || null,
+      xpAwarded: isPresent ? xpReward : 0,
+    },
+    update: {
+      attended: isPresent,
+      attendanceStatus: newStatus,
+      durationMinutes: isPresent ? (webinar.duration || 90) : 0,
+      markedByAdmin: true,
+      adminNotes: adminNotes || null,
+      xpAwarded: isPresent ? xpReward : 0,
+    },
+  })
+
+  if (isPresent) {
+    await grantXp(userId, 'LIVE_ATTEND', `Hadir Webinar: ${webinar.title}`, xpReward).catch(() => {})
+    await issueWebinarCertificate(userId, webinarId)
+  }
+
+  return reg
+}
+
+/**
+ * Mengambil detail presensi & peserta webinar untuk admin
+ */
+export async function getWebinarAttendanceDetails(webinarId: string) {
+  const webinar = await prisma.webinar.findUnique({
+    where: { id: webinarId },
+    select: {
+      id: true,
+      title: true,
+      scheduledAt: true,
+      duration: true,
+      quota: true,
+      meetingUrl: true,
+      isEnded: true,
+      endedAt: true,
+      attendanceThresholdPct: true,
+      xpReward: true,
+    },
+  })
+  if (!webinar) throw new Error('Webinar tidak ditemukan')
+
+  const registrations = await prisma.webinarRegistration.findMany({
+    where: { webinarId },
+    include: {
+      user: {
+        select: { id: true, name: true, email: true, phone: true, photoUrl: true },
+      },
+    },
+    orderBy: { registeredAt: 'desc' },
+  })
+
+  const certificates = await prisma.certificate.findMany({
+    where: { webinarId },
+    select: { userId: true, credentialId: true, issuedAt: true, id: true },
+  })
+  const certMap = new Map(certificates.map((c) => [c.userId, c]))
+
+  const durationMinutes = webinar.duration || 90
+  const thresholdPct = webinar.attendanceThresholdPct || 80
+  const minRequiredMinutes = Math.round(durationMinutes * (thresholdPct / 100))
+
+  let countPresent = 0
+  let countExcused = 0
+  let countAbsent = 0
+
+  const participants = registrations.map((r) => {
+    const status = r.attendanceStatus || (r.attended ? 'PRESENT' : 'ABSENT')
+    if (status === 'PRESENT' || status === 'MANUAL') countPresent++
+    else if (status === 'EXCUSED') countExcused++
+    else countAbsent++
+
+    const cert = certMap.get(r.userId)
+
+    return {
+      registrationId: r.id,
+      userId: r.userId,
+      name: r.user.name,
+      email: r.user.email,
+      phone: r.user.phone,
+      photoUrl: r.user.photoUrl,
+      registeredAt: r.registeredAt,
+      attended: r.attended,
+      status,
+      durationMinutes: r.durationMinutes || 0,
+      minRequiredMinutes,
+      joinTime: r.joinTime,
+      leaveTime: r.leaveTime,
+      markedByAdmin: r.markedByAdmin,
+      adminNotes: r.adminNotes,
+      xpAwarded: r.xpAwarded || 0,
+      certificate: cert || null,
+    }
+  })
+
+  const totalRegistered = registrations.length
+  const attendanceRate = totalRegistered > 0
+    ? Math.round(((countPresent + countExcused) / totalRegistered) * 100)
+    : 0
+
+  return {
+    webinar: {
+      ...webinar,
+      minRequiredMinutes,
+      thresholdPct,
+    },
+    summary: {
+      totalRegistered,
+      countPresent,
+      countExcused,
+      countAbsent,
+      attendanceRate,
+    },
+    participants,
+  }
+}
+
+/**
+ * Mengambil status presensi seorang mentee di webinar tertentu
+ */
+export async function getMenteeWebinarAttendance(webinarId: string, userId: string) {
+  const webinar = await prisma.webinar.findUnique({
+    where: { id: webinarId },
+    select: {
+      id: true,
+      title: true,
+      duration: true,
+      attendanceThresholdPct: true,
+      xpReward: true,
+      meetingUrl: true,
+      scheduledAt: true,
+      isEnded: true,
+      endedAt: true,
+    },
+  })
+  if (!webinar) return null
+
+  const reg = await prisma.webinarRegistration.findUnique({
+    where: { userId_webinarId: { userId, webinarId } },
+  })
+
+  const cert = await prisma.certificate.findFirst({
+    where: { userId, webinarId },
+    select: { id: true, credentialId: true, issuedAt: true, pdfUrl: true },
+  })
+
+  const durationMinutes = webinar.duration || 90
+  const thresholdPct = webinar.attendanceThresholdPct || 80
+  const minRequiredMinutes = Math.round(durationMinutes * (thresholdPct / 100))
+
+  return {
+    isRegistered: Boolean(reg),
+    registeredAt: reg?.registeredAt || null,
+    attended: reg?.attended || false,
+    status: reg?.attendanceStatus || (reg?.attended ? 'PRESENT' : 'ABSENT'),
+    durationMinutes: reg?.durationMinutes || 0,
+    sessionDurationMinutes: durationMinutes,
+    minRequiredMinutes,
+    thresholdPct,
+    xpReward: webinar.xpReward || 25,
+    xpAwarded: reg?.xpAwarded || 0,
+    markedByAdmin: reg?.markedByAdmin || false,
+    adminNotes: reg?.adminNotes || null,
+    certificate: cert || null,
   }
 }

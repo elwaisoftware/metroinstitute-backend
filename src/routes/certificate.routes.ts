@@ -18,13 +18,17 @@ certificateRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
       certificates.map(async (c) => {
         let course = null
         let bootcamp = null
+        let webinar = null
         if (c.courseId) {
           course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true } } } })
         }
         if (c.bootcampId) {
           bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true } } } })
         }
-        return { ...c, course, bootcamp }
+        if (c.webinarId) {
+          webinar = await prisma.webinar.findUnique({ where: { id: c.webinarId }, select: { title: true, field: true, bannerUrl: true, certificateTemplate: { select: { bgImage: true } } } })
+        }
+        return { ...c, course, bootcamp, webinar }
       })
     )
 
@@ -45,13 +49,17 @@ certificateRouter.get('/verify/:credentialId', async (req: AuthRequest, res: Res
 
     let course = null
     let bootcamp = null
+    let webinar = null
     if (cert.courseId) {
       course = await prisma.miniCourse.findUnique({ where: { id: cert.courseId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
     }
     if (cert.bootcampId) {
       bootcamp = await prisma.bootcamp.findUnique({ where: { id: cert.bootcampId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
     }
+    if (cert.webinarId) {
+      webinar = await prisma.webinar.findUnique({ where: { id: cert.webinarId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
+    }
 
-    res.json({ success: true, data: { ...cert, course, bootcamp }, valid: true })
+    res.json({ success: true, data: { ...cert, course, bootcamp, webinar }, valid: true })
   } catch (err) { next(err) }
 })

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import crypto from 'crypto'
 import { prisma } from '../utils/prisma'
 import { logger } from '../utils/logger'
-import { processGoogleMeetAttendance, GoogleMeetParticipant } from '../services/attendance.service'
+import { processGoogleMeetAttendance, processWebinarAttendance, GoogleMeetParticipant } from '../services/attendance.service'
 
 export const webhookRouter = Router()
 
@@ -203,51 +203,107 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
     let body = req.body
     if (Buffer.isBuffer(body)) body = JSON.parse(body.toString('utf8'))
 
-    const { eventType, conferenceId, sessionId, participants } = body
+    const { eventType, conferenceId, sessionId, webinarId, participants } = body
 
     // Hanya proses event saat meeting selesai
     if (eventType !== 'meeting.ended') {
       return res.json({ success: true, message: `Event ${eventType} diabaikan` })
     }
 
-    if (!sessionId || !conferenceId || !Array.isArray(participants)) {
+    const targetId = webinarId || sessionId
+
+    if (!targetId || !conferenceId || !Array.isArray(participants)) {
       logger.warn('Google Meet webhook: payload tidak lengkap', { body })
-      return res.status(400).json({ success: false, message: 'Payload tidak lengkap: sessionId, conferenceId, participants wajib ada' })
+      return res.status(400).json({ success: false, message: 'Payload tidak lengkap: sessionId/webinarId, conferenceId, participants wajib ada' })
     }
 
-    // Validasi sessionId ada di database
+    // 1. Cek apakah ini Webinar
+    if (webinarId) {
+      const webinar = await prisma.webinar.findUnique({
+        where: { id: webinarId },
+        select: { id: true, title: true },
+      })
+      if (!webinar) {
+        return res.status(404).json({ success: false, message: `Webinar ${webinarId} tidak ditemukan` })
+      }
+
+      logger.info('Google Meet webhook untuk Webinar diterima', {
+        conferenceId,
+        webinarId,
+        participantCount: participants.length,
+      })
+
+      const result = await processWebinarAttendance(
+        webinarId,
+        conferenceId,
+        participants as GoogleMeetParticipant[]
+      )
+
+      return res.json({
+        success: true,
+        message: 'Data kehadiran webinar berhasil diproses',
+        data: result,
+      })
+    }
+
+    // 2. Cek apakah targetId adalah Bootcamp Session
     const session = await prisma.bootcampSession.findUnique({
-      where: { id: sessionId },
+      where: { id: targetId },
       select: { id: true, title: true, type: true },
     })
 
-    if (!session) {
-      logger.warn('Google Meet webhook: sessionId tidak ditemukan', { sessionId })
-      return res.status(404).json({ success: false, message: `Session ${sessionId} tidak ditemukan` })
+    if (session) {
+      if (session.type !== 'LIVE') {
+        return res.status(400).json({ success: false, message: 'Sesi ini bukan tipe LIVE' })
+      }
+
+      logger.info('Google Meet webhook untuk Bootcamp Session diterima', {
+        conferenceId,
+        sessionId: targetId,
+        participantCount: participants.length,
+      })
+
+      const result = await processGoogleMeetAttendance(
+        targetId,
+        conferenceId,
+        participants as GoogleMeetParticipant[]
+      )
+
+      return res.json({
+        success: true,
+        message: 'Data kehadiran bootcamp berhasil diproses',
+        data: result,
+      })
     }
 
-    if (session.type !== 'LIVE') {
-      return res.status(400).json({ success: false, message: 'Sesi ini bukan tipe LIVE' })
+    // 3. Fallback: Cek apakah targetId adalah Webinar ID
+    const webinarFallback = await prisma.webinar.findUnique({
+      where: { id: targetId },
+      select: { id: true, title: true },
+    })
+
+    if (webinarFallback) {
+      logger.info('Google Meet webhook untuk Webinar (via targetId) diterima', {
+        conferenceId,
+        webinarId: targetId,
+        participantCount: participants.length,
+      })
+
+      const result = await processWebinarAttendance(
+        targetId,
+        conferenceId,
+        participants as GoogleMeetParticipant[]
+      )
+
+      return res.json({
+        success: true,
+        message: 'Data kehadiran webinar berhasil diproses',
+        data: result,
+      })
     }
 
-    logger.info('Google Meet webhook diterima', {
-      conferenceId,
-      sessionId,
-      participantCount: participants.length,
-    })
-
-    // ── Proses kehadiran secara otomatis ──────────────────
-    const result = await processGoogleMeetAttendance(
-      sessionId,
-      conferenceId,
-      participants as GoogleMeetParticipant[]
-    )
-
-    return res.json({
-      success: true,
-      message: 'Data kehadiran berhasil diproses',
-      data: result,
-    })
+    logger.warn('Google Meet webhook: ID sesi atau webinar tidak ditemukan', { targetId })
+    return res.status(404).json({ success: false, message: `ID target ${targetId} tidak ditemukan di Bootcamp Session maupun Webinar` })
   } catch (err) {
     logger.error('Google Meet webhook error', { error: err })
     return res.status(500).json({ success: false, message: 'Gagal memproses data kehadiran' })

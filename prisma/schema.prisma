@@ -852,6 +852,9 @@ model Webinar {
   bannerUrl             String?
   scheduledAt           DateTime
   duration              Int       @default(90) // menit
+  xpReward              Int       @default(25) // XP yang didapat jika hadir
+  attendanceThresholdPct Int      @default(80) // default 80% durasi hadir
+  googleMeetCode        String?   // Kode / conference ID Google Meet
   meetingUrl            String?   // Zoom / Google Meet / Youtube Live
   recordingUrl          String?
   quota                 Int?      // max peserta, null = unlimited
@@ -873,11 +876,19 @@ model Webinar {
 }
 
 model WebinarRegistration {
-  id           String   @id @default(cuid())
-  webinarId    String
-  userId       String
-  registeredAt DateTime @default(now())
-  attended     Boolean  @default(false)
+  id                 String            @id @default(cuid())
+  webinarId          String
+  userId             String
+  registeredAt       DateTime          @default(now())
+  attended           Boolean           @default(false)
+  attendanceStatus   AttendanceStatus  @default(ABSENT)
+  durationMinutes    Int               @default(0)
+  joinTime           DateTime?
+  leaveTime          DateTime?
+  googleMeetId       String?
+  markedByAdmin      Boolean           @default(false)
+  adminNotes         String?
+  xpAwarded          Int?
 
   webinar Webinar @relation(fields: [webinarId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
+import { getMenteeWebinarAttendance } from '../services/attendance.service'
 
 export const webinarRouter = Router()
 
@@ -72,6 +73,8 @@ webinarRouter.get('/my/registered', authenticate, async (req: AuthRequest, res: 
         ...r.webinar,
         registeredAt: r.registeredAt,
         attended: r.attended,
+        attendanceStatus: r.attendanceStatus,
+        durationMinutes: r.durationMinutes,
         isRegistered: true,
       })),
     })
@@ -116,6 +119,11 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
 
     const effectiveEndedAt = webinar.endedAt || (isEnded ? webinar.updatedAt : null)
 
+    let attendance = null
+    if (userId && isRegistered) {
+      attendance = await getMenteeWebinarAttendance(id, userId)
+    }
+
     res.json({
       success: true,
       data: {
@@ -123,12 +131,24 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
         endedAt: effectiveEndedAt,
         isRegistered,
         registrations: undefined,
+        attendance,
         meetingUrl: canAccessMeeting ? formatAbsoluteUrl(webinar.meetingUrl) : null,
         recordingUrl: formatAbsoluteUrl(webinar.recordingUrl),
         liveStatus: isEnded ? 'ENDED' : isLiveWindow ? 'LIVE' : 'UPCOMING',
         openTime: new Date(openTimeMs).toISOString(),
       },
     })
+  } catch (err) { next(err) }
+})
+
+// ── GET /webinars/:id/my-attendance ─────────────────────────
+webinarRouter.get('/:id/my-attendance', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const userId = req.user!.id
+    const attendance = await getMenteeWebinarAttendance(id, userId)
+    if (!attendance) throw createError(404, 'Webinar tidak ditemukan')
+    res.json({ success: true, data: attendance })
   } catch (err) { next(err) }
 })
 

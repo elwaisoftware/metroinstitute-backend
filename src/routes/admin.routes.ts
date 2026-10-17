@@ -4,7 +4,7 @@ import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { WhatsAppService } from '../services/whatsapp.service'
-import { getSessionAttendanceDetails, updateAttendanceStatus } from '../services/attendance.service'
+import { getSessionAttendanceDetails, updateAttendanceStatus, getWebinarAttendanceDetails, overrideWebinarAttendance } from '../services/attendance.service'
 import multer from 'multer'
 import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
@@ -2025,6 +2025,8 @@ adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: Next
       isFeatured: z.boolean().default(false),
       benefits: z.array(z.string()).optional().default([]),
       certificateTemplateId: z.string().optional().nullable(),
+      attendanceThresholdPct: z.number().min(1).max(100).optional().default(80),
+      xpReward: z.number().min(0).optional().default(25),
     }).parse(req.body)
 
     const webinar = await prisma.webinar.create({
@@ -2078,6 +2080,8 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
       endedAt: z.string().optional().nullable(),
       benefits: z.array(z.string()).optional(),
       certificateTemplateId: z.string().optional().nullable(),
+      attendanceThresholdPct: z.number().min(1).max(100).optional(),
+      xpReward: z.number().min(0).optional(),
     })
 
     const body = updateSchema.parse(req.body)
@@ -2151,34 +2155,35 @@ adminRouter.patch('/webinars/:id/featured', async (req: AuthRequest, res: Respon
 adminRouter.get('/webinars/:id/participants', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as Record<string, string>
-    const webinar = await prisma.webinar.findUnique({
-      where: { id },
-      select: { id: true, title: true, scheduledAt: true, quota: true },
-    })
-    if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
-
-    const registrations = await prisma.webinarRegistration.findMany({
-      where: { webinarId: id },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, phone: true, photoUrl: true },
-        },
-      },
-      orderBy: { registeredAt: 'desc' },
-    })
-
+    const data = await getWebinarAttendanceDetails(id)
     res.json({
       success: true,
-      data: {
-        webinar,
-        participants: registrations.map((r) => ({
-          registrationId: r.id,
-          registeredAt: r.registeredAt,
-          attended: r.attended,
-          user: r.user,
-        })),
-        total: registrations.length,
-      },
+      data,
+    })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/webinars/:id/attendance ───────────────────────
+adminRouter.get('/webinars/:id/attendance', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const data = await getWebinarAttendanceDetails(id)
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+})
+
+// ── PATCH /admin/webinars/:id/attendance/:userId ────────────
+adminRouter.patch('/webinars/:id/attendance/:userId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id: webinarId, userId } = req.params as Record<string, string>
+    const { status, adminNotes } = req.body
+    if (!status) throw createError(400, 'Status presensi wajib diisi')
+
+    const updated = await overrideWebinarAttendance(webinarId, userId, status, adminNotes)
+    res.json({
+      success: true,
+      message: 'Status presensi peserta webinar berhasil diperbarui',
+      data: updated,
     })
   } catch (err) { next(err) }
 })
@@ -2186,12 +2191,16 @@ adminRouter.get('/webinars/:id/participants', async (req: AuthRequest, res: Resp
 // ── PATCH /admin/webinars/:id/participants/:regId/attend ─────
 adminRouter.patch('/webinars/:id/participants/:regId/attend', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { regId } = req.params as Record<string, string>
-    const { attended } = req.body
-    const updated = await prisma.webinarRegistration.update({
+    const { id: webinarId, regId } = req.params as Record<string, string>
+    const { attended, status, adminNotes } = req.body
+
+    const reg = await prisma.webinarRegistration.findUnique({
       where: { id: regId },
-      data: { attended: Boolean(attended) },
     })
+    if (!reg) throw createError(404, 'Data pendaftaran tidak ditemukan')
+
+    const newStatus = status || (attended ? 'MANUAL' : 'ABSENT')
+    const updated = await overrideWebinarAttendance(webinarId, reg.userId, newStatus, adminNotes)
     res.json({ success: true, data: updated })
   } catch (err) { next(err) }
 })
