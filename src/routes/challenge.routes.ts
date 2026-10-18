@@ -5,6 +5,7 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.midd
 import { createError } from '../middleware/errorHandler'
 import { grantXp } from '../utils/xp'
 import { updateBadge } from '../utils/badge'
+import { updateStreak } from '../utils/streak'
 
 export const challengeRouter = Router()
 challengeRouter.use(authenticate)
@@ -541,6 +542,7 @@ challengeRouter.post('/:id/submit', async (req: AuthRequest, res: Response, next
       if (shouldAwardXp) {
         xpEarned = await grantXp(userId, 'CHALLENGE_QUIZ_CORRECT', `Challenge: ${challenge.title}`, challenge.xpReward)
         await updateBadge(userId)
+        await updateStreak(userId)
       }
 
       return res.json({

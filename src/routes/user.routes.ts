@@ -7,6 +7,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { grantXp } from '../utils/xp'
 import { updateBadge } from '../utils/badge'
+import { updateStreak } from '../utils/streak'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -29,8 +30,11 @@ userRouter.use(authenticate)
 // ── GET /users/me ──────────────────────────────────────────
 userRouter.get('/me', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userId = req.user!.id
+    await updateStreak(userId)
+
     const user = await prisma.user.findUnique({
-      where: { id: req.user!.id },
+      where: { id: userId },
       select: {
         id: true, name: true, email: true, phone: true,
         photoUrl: true, bio: true, status: true, institution: true,
@@ -117,6 +121,7 @@ userRouter.post('/me/photo', upload.single('photo'), async (req: AuthRequest, re
 userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id
+    await updateStreak(userId)
 
     const [user, bootcampEnrollments, courseEnrollments, upcomingLive, unreadCount] = await Promise.all([
       prisma.user.findUnique({

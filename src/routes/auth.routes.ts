@@ -8,6 +8,8 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { sendEmail } from '../utils/email'
 import { WhatsAppService } from '../services/whatsapp.service'
 import crypto from 'crypto'
+import { logger } from '../utils/logger'
+import { updateStreak } from '../utils/streak'
 
 export const authRouter = Router()
 
@@ -442,59 +444,108 @@ authRouter.get('/google/callback', async (req: Request, res: Response, next: Nex
   } catch (err) { next(err) }
 })
 
-// ── Helper: Update Streak ──────────────────────────────────
-async function updateStreak(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { lastActivityAt: true, currentStreak: true, longestStreak: true } })
-  if (!user) return
+// ── POST /auth/google/mobile ──────────────────────────────
+authRouter.post('/google/mobile', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, name, googleId, photoUrl, idToken } = req.body
 
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    let verifiedEmail = email ? String(email).trim().toLowerCase() : ''
+    let verifiedName = name ? String(name).trim() : ''
+    let verifiedId = googleId ? String(googleId).trim() : ''
+    let verifiedPicture = photoUrl ? String(photoUrl).trim() : null
 
-  if (user.lastActivityAt) {
-    const lastDay = new Date(
-      user.lastActivityAt.getFullYear(),
-      user.lastActivityAt.getMonth(),
-      user.lastActivityAt.getDate(),
-    )
-    const diffDays = Math.floor((today.getTime() - lastDay.getTime()) / (1000 * 60 * 60 * 24))
-
-    if (diffDays === 0) return // Already counted today
-    if (diffDays === 1) {
-      // Consecutive day
-      const newStreak = user.currentStreak + 1
-      const newLongest = Math.max(newStreak, user.longestStreak)
-      await prisma.user.update({
-        where: { id: userId },
-        data: { currentStreak: newStreak, longestStreak: newLongest, lastActivityAt: now },
-      })
-      // Streak milestone rewards
-      if ([7, 30, 100].includes(newStreak)) {
-        const xpConfig = await prisma.xpConfig.findUnique({
-          where: { source: newStreak === 7 ? 'STREAK_7' : newStreak === 30 ? 'STREAK_30' : 'STREAK_100' },
-        })
-        if (xpConfig) {
-          await prisma.$transaction([
-            prisma.xpLog.create({
-              data: {
-                userId,
-                source: newStreak === 7 ? 'STREAK_7' : newStreak === 30 ? 'STREAK_30' : 'STREAK_100',
-                amount: xpConfig.amount,
-                note: `Streak ${newStreak} hari!`,
-              },
-            }),
-            prisma.user.update({ where: { id: userId }, data: { totalXp: { increment: xpConfig.amount } } }),
-          ])
+    // If idToken is provided, verify with Google tokeninfo endpoint
+    if (idToken) {
+      try {
+        const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`)
+        if (verifyRes.ok) {
+          const payload = await verifyRes.json() as any
+          if (payload.email) verifiedEmail = payload.email.toLowerCase()
+          if (payload.sub) verifiedId = payload.sub
+          if (payload.name && !verifiedName) verifiedName = payload.name
+          if (payload.picture && !verifiedPicture) verifiedPicture = payload.picture
         }
+      } catch (tokenErr) {
+        logger.warn('Google mobile tokeninfo verification fallback', { error: tokenErr })
       }
-    } else {
-      // Streak broken
-      await prisma.user.update({ where: { id: userId }, data: { currentStreak: 1, lastActivityAt: now } })
     }
-  } else {
-    // First activity
-    await prisma.user.update({ where: { id: userId }, data: { currentStreak: 1, lastActivityAt: now } })
+
+    if (!verifiedEmail) {
+      throw createError(400, 'Email Google tidak ditemukan atau tidak valid')
+    }
+
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(verifiedId ? [{ googleId: verifiedId }] : []),
+          { email: verifiedEmail },
+        ],
+      },
+    })
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          name: verifiedName || verifiedEmail.split('@')[0],
+          email: verifiedEmail,
+          googleId: verifiedId || null,
+          photoUrl: verifiedPicture,
+          isEmailVerified: true,
+        },
+      })
+    } else if (verifiedId && !user.googleId) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          googleId: verifiedId,
+          photoUrl: user.photoUrl || verifiedPicture,
+          isEmailVerified: true,
+        },
+      })
+    }
+
+    if (user.isSuspended) {
+      throw createError(403, 'Akun Anda telah dinonaktifkan. Silakan hubungi admin.')
+    }
+
+    await updateStreak(user.id)
+
+    const accessToken = generateAccessToken(user)
+    const refreshToken = generateRefreshToken(user.id)
+
+    await prisma.userSession.create({
+      data: {
+        userId: user.id,
+        refreshToken,
+        deviceInfo: req.get('user-agent')?.slice(0, 200) || 'Mobile App',
+        ipAddress: req.ip,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    })
+
+    setRefreshCookie(res, refreshToken)
+
+    res.json({
+      success: true,
+      data: {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          photoUrl: user.photoUrl,
+          isEmailVerified: user.isEmailVerified,
+          skillTestDone: user.skillTestDone,
+        },
+      },
+    })
+  } catch (err) {
+    next(err)
   }
-}
+})
 
 // ── POST /auth/change-password ─────────────────────────────
 authRouter.post('/change-password', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {

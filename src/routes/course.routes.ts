@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { grantXp } from '../utils/xp'
 import { updateBadge } from '../utils/badge'
+import { updateStreak } from '../utils/streak'
 
 export const courseRouter = Router()
 courseRouter.use(authenticate)
@@ -279,6 +280,7 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
     const xpAmount = session.xpReward > 0 ? session.xpReward : 10
     const xpEarned = await grantXp(userId, xpSource, `Sesi: ${session.title}`, xpAmount)
     await updateBadge(userId)
+    await updateStreak(userId)
 
     // Recalculate progress
     const allCourseSessions = await prisma.courseSession.findMany({

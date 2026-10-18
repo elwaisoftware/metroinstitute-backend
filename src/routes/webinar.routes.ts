@@ -4,6 +4,9 @@ import { prisma } from '../utils/prisma'
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { getMenteeWebinarAttendance } from '../services/attendance.service'
+import { grantXp } from '../utils/xp'
+import { updateBadge } from '../utils/badge'
+import { updateStreak } from '../utils/streak'
 
 export const webinarRouter = Router()
 
@@ -199,5 +202,37 @@ webinarRouter.post('/:id/register', authenticate, async (req: AuthRequest, res: 
       message: 'Pendaftaran webinar berhasil!',
       data: registration,
     })
+  } catch (err) { next(err) }
+})
+
+// ── POST /webinars/:id/attend ─────────────────────────────
+webinarRouter.post('/:id/attend', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id: webinarId } = req.params as Record<string, string>
+    const userId = req.user!.id
+    const { feedback } = req.body
+
+    const reg = await prisma.webinarRegistration.findUnique({
+      where: { userId_webinarId: { userId, webinarId } },
+    })
+    if (!reg) throw createError(403, 'Anda belum terdaftar di webinar ini')
+
+    const updated = await prisma.webinarRegistration.update({
+      where: { id: reg.id },
+      data: {
+        attended: true,
+        attendanceStatus: 'PRESENT',
+        joinTime: reg.joinTime || new Date(),
+        adminNotes: feedback ? `Feedback: ${feedback}` : undefined,
+      },
+    })
+
+    const webinar = await prisma.webinar.findUnique({ where: { id: webinarId } })
+    const xp = webinar?.xpReward ?? 25
+    await grantXp(userId, 'LIVE_ATTEND', `Hadir Webinar: ${webinar?.title || ''}`, xp)
+    await updateBadge(userId)
+    await updateStreak(userId)
+
+    res.json({ success: true, message: 'Presensi berhasil dicatat!', data: updated })
   } catch (err) { next(err) }
 })
