@@ -1308,7 +1308,7 @@ adminRouter.post('/courses', async (req: AuthRequest, res: Response, next: NextF
         thumbnailUrl: data.thumbnailUrl || null
       }
     })
-    res.json({ success: true, data: course })
+    res.json({ success: true, data: { ...course, status: course.isPublished ? 'PUBLISHED' : 'DRAFT' } })
   } catch (err) { next(err) }
 })
 
@@ -1339,7 +1339,7 @@ adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: 
       where: { id },
       data: updatePayload
     })
-    res.json({ success: true, data: updated })
+    res.json({ success: true, data: { ...updated, status: updated.isPublished ? 'PUBLISHED' : 'DRAFT' } })
   } catch (err) { next(err) }
 })
 

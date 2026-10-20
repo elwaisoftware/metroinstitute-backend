@@ -50,7 +50,12 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
       },
     })
 
-    res.json({ success: true, data: courses })
+    const mappedCourses = courses.map((c: any) => ({
+      ...c,
+      status: c.isPublished ? 'PUBLISHED' : 'DRAFT',
+    }))
+
+    res.json({ success: true, data: mappedCourses })
   } catch (err) { next(err) }
 })
 
@@ -96,6 +101,7 @@ courseRouter.get('/:id', async (req: AuthRequest, res: Response, next: NextFunct
               select: {
                 id: true, title: true, type: true,
                 videoDuration: true, isFreePreview: true, orderIndex: true,
+                videoUrl: true,
               },
             },
           },

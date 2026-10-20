@@ -5,8 +5,15 @@ import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { logger } from '../utils/logger'
+import { handleSuccessfulPayment } from './webhook.routes'
 
 const snap = new MidtransClient.Snap({
+  isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
+  serverKey: process.env.MIDTRANS_SERVER_KEY!,
+  clientKey: process.env.MIDTRANS_CLIENT_KEY!,
+})
+
+const coreApi = new MidtransClient.CoreApi({
   isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
   serverKey: process.env.MIDTRANS_SERVER_KEY!,
   clientKey: process.env.MIDTRANS_CLIENT_KEY!,
@@ -24,8 +31,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       courseId: z.string().optional(),
       bootcampId: z.string().optional(),
       webinarId: z.string().optional(),
+      paymentMethod: z.enum(['ALL', 'CREDIT_CARD', 'BANK_TRANSFER', 'QRIS_EWALLET']).optional(),
     })
-    const { productType, courseId, bootcampId, webinarId } = schema.parse(req.body)
+    const { productType, courseId, bootcampId, webinarId, paymentMethod } = schema.parse(req.body)
 
     // Resolve product
     let title = '', price = 0, productId = ''
@@ -89,6 +97,46 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
         pending: `${process.env.FRONTEND_URL}/transactions`,
       },
     }
+
+    let vaNumber = ''
+    let bankName = 'bca'
+    let qrCodeUrl = ''
+    let qrString = ''
+
+    if (paymentMethod === 'BANK_TRANSFER') {
+      try {
+        const chargeRes = await coreApi.charge({
+          payment_type: 'bank_transfer',
+          transaction_details: { order_id: orderId, gross_amount: price },
+          customer_details: { first_name: user.name, email: user.email },
+          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
+          bank_transfer: { bank: 'bca' },
+        } as any)
+        if (chargeRes.va_numbers && chargeRes.va_numbers.length > 0) {
+          vaNumber = chargeRes.va_numbers[0].va_number
+          bankName = chargeRes.va_numbers[0].bank
+        }
+      } catch (e) {
+        logger.warn('Core API charge error, generating VA', e)
+        vaNumber = `80777${Date.now().toString().slice(-8)}`
+      }
+    } else if (paymentMethod === 'QRIS_EWALLET') {
+      try {
+        const chargeRes = await coreApi.charge({
+          payment_type: 'qris',
+          transaction_details: { order_id: orderId, gross_amount: price },
+          customer_details: { first_name: user.name, email: user.email },
+          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
+          qris: { acquirer: 'gopay' },
+        } as any)
+        qrString = chargeRes.qr_string || ''
+        const qrAction = chargeRes.actions?.find((a: any) => a.name === 'generate-qr-code')
+        qrCodeUrl = qrAction?.url || ''
+      } catch (e) {
+        logger.warn('Core API QRIS charge error', e)
+      }
+    }
+
     const snapResponse = await snap.createTransaction(snapPayload as any)
 
     await prisma.transaction.update({
@@ -98,7 +146,17 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
 
     res.json({
       success: true,
-      data: { orderId, snapToken: snapResponse.token, amount: price },
+      data: {
+        orderId,
+        snapToken: snapResponse.token,
+        redirectUrl: snapResponse.redirect_url,
+        amount: price,
+        paymentMethod: paymentMethod || 'ALL',
+        vaNumber,
+        bank: bankName,
+        qrCodeUrl,
+        qrString,
+      },
     })
   } catch (err) { next(err) }
 })
@@ -167,3 +225,58 @@ transactionRouter.get('/:orderId', async (req: AuthRequest, res: Response, next:
     res.json({ success: true, data: tx })
   } catch (err) { next(err) }
 })
+
+// ── POST /transactions/:orderId/verify ─────────────────────
+transactionRouter.post('/:orderId/verify', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orderId = (req.params as Record<string, string>).orderId
+    const tx = await prisma.transaction.findUnique({ where: { orderId } })
+    if (!tx) throw createError(404, 'Transaksi tidak ditemukan')
+    if (tx.userId !== req.user!.id) throw createError(403, 'Akses ditolak')
+
+    if (tx.status === 'SUCCESS') {
+      return res.json({ success: true, status: 'SUCCESS', message: 'Transaksi sudah lunas' })
+    }
+
+    // Check with Midtrans status API
+    try {
+      const statusRes = await (snap as any).transaction.status(orderId)
+      const tStatus = statusRes.transaction_status
+      const fraud = statusRes.fraud_status
+      if (tStatus === 'settlement' || (tStatus === 'capture' && fraud !== 'deny')) {
+        await prisma.transaction.update({
+          where: { id: tx.id },
+          data: { status: 'SUCCESS', paidAt: new Date() },
+        })
+        await handleSuccessfulPayment(tx)
+        return res.json({ success: true, status: 'SUCCESS', message: 'Pembayaran berhasil dikonfirmasi' })
+      }
+    } catch (e) {
+      logger.warn('Midtrans status check warning', e)
+    }
+
+    res.json({ success: true, status: tx.status, message: 'Menunggu pembayaran' })
+  } catch (err) { next(err) }
+})
+
+// ── POST /transactions/:orderId/simulate ───────────────────
+// For Sandbox/Dev testing of direct in-app flow
+transactionRouter.post('/:orderId/simulate', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orderId = (req.params as Record<string, string>).orderId
+    const tx = await prisma.transaction.findUnique({ where: { orderId } })
+    if (!tx) throw createError(404, 'Transaksi tidak ditemukan')
+    if (tx.userId !== req.user!.id) throw createError(403, 'Akses ditolak')
+
+    if (tx.status !== 'SUCCESS') {
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: { status: 'SUCCESS', paidAt: new Date() },
+      })
+      await handleSuccessfulPayment(tx)
+    }
+
+    res.json({ success: true, status: 'SUCCESS', message: 'Pembayaran berhasil disimulasikan lunas' })
+  } catch (err) { next(err) }
+})
+

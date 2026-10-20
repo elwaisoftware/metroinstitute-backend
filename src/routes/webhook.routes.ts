@@ -76,7 +76,7 @@ webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
   }
 })
 
-async function handleSuccessfulPayment(tx: {
+export async function handleSuccessfulPayment(tx: {
   id: string; userId: string; productType: string
   courseId: string | null; bootcampId: string | null; title: string
 }) {

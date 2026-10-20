@@ -88,6 +88,7 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
               select: {
                 id: true, title: true, type: true,
                 videoDuration: true, liveScheduledAt: true, orderIndex: true,
+                videoUrl: true, isFreePreview: true,
               },
             },
           },
