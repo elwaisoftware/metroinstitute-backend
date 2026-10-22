@@ -27,6 +27,27 @@ function normalizeTemplateConfig(config: any) {
   })
 }
 
+async function resolveCertificateTemplate(template: any, productType: 'MINI_COURSE' | 'BOOTCAMP' | 'WEBINAR') {
+  if (template?.config) {
+    return {
+      ...template,
+      config: normalizeTemplateConfig(template.config),
+    }
+  }
+  const activeType = productType === 'BOOTCAMP' ? 'BOOTCAMP' : 'MINI_COURSE'
+  const activeTemplate = await prisma.certificateTemplate.findFirst({
+    where: { type: activeType, isActive: true },
+    select: { id: true, name: true, type: true, bgImage: true, config: true }
+  })
+  if (activeTemplate?.config) {
+    return {
+      ...activeTemplate,
+      config: normalizeTemplateConfig(activeTemplate.config)
+    }
+  }
+  return template || null
+}
+
 // ── GET /certificates/verify/:credentialId (public verification, no auth required) ──
 certificateRouter.get('/verify/:credentialId', async (req, res: Response, next: NextFunction) => {
   try {
@@ -42,24 +63,27 @@ certificateRouter.get('/verify/:credentialId', async (req, res: Response, next: 
     let bootcamp = null
     let webinar = null
     if (cert.courseId) {
-      course = await prisma.miniCourse.findUnique({ where: { id: cert.courseId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-      if (course?.certificateTemplate?.config) {
-        course.certificateTemplate.config = normalizeTemplateConfig(course.certificateTemplate.config)
+      course = await prisma.miniCourse.findUnique({ where: { id: cert.courseId }, select: { title: true, field: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+      if (course) {
+        course.certificateTemplate = await resolveCertificateTemplate(course.certificateTemplate, 'MINI_COURSE')
       }
     }
     if (cert.bootcampId) {
-      bootcamp = await prisma.bootcamp.findUnique({ where: { id: cert.bootcampId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-      if (bootcamp?.certificateTemplate?.config) {
-        bootcamp.certificateTemplate.config = normalizeTemplateConfig(bootcamp.certificateTemplate.config)
+      bootcamp = await prisma.bootcamp.findUnique({ where: { id: cert.bootcampId }, select: { title: true, field: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+      if (bootcamp) {
+        bootcamp.certificateTemplate = await resolveCertificateTemplate(bootcamp.certificateTemplate, 'BOOTCAMP')
       }
     }
     if (cert.webinarId) {
-      webinar = await prisma.webinar.findUnique({ where: { id: cert.webinarId }, select: { title: true, field: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-      if (webinar?.certificateTemplate?.config) {
-        webinar.certificateTemplate.config = normalizeTemplateConfig(webinar.certificateTemplate.config)
+      webinar = await prisma.webinar.findUnique({ where: { id: cert.webinarId }, select: { title: true, field: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+      if (webinar) {
+        webinar.certificateTemplate = await resolveCertificateTemplate(webinar.certificateTemplate, 'WEBINAR')
       }
     }
-    res.json({ success: true, data: { ...cert, course, bootcamp, webinar } })
+
+    const certificateTemplate = course?.certificateTemplate || bootcamp?.certificateTemplate || webinar?.certificateTemplate
+
+    res.json({ success: true, data: { ...cert, course, bootcamp, webinar, certificateTemplate } })
   } catch (err) { next(err) }
 })
 
@@ -83,24 +107,27 @@ certificateRouter.get('/', async (req: AuthRequest, res: Response, next: NextFun
         let bootcamp = null
         let webinar = null
         if (c.courseId) {
-          course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-          if (course?.certificateTemplate?.config) {
-            course.certificateTemplate.config = normalizeTemplateConfig(course.certificateTemplate.config)
+          course = await prisma.miniCourse.findUnique({ where: { id: c.courseId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+          if (course) {
+            course.certificateTemplate = await resolveCertificateTemplate(course.certificateTemplate, 'MINI_COURSE')
           }
         }
         if (c.bootcampId) {
-          bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-          if (bootcamp?.certificateTemplate?.config) {
-            bootcamp.certificateTemplate.config = normalizeTemplateConfig(bootcamp.certificateTemplate.config)
+          bootcamp = await prisma.bootcamp.findUnique({ where: { id: c.bootcampId }, select: { title: true, field: true, thumbnailUrl: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+          if (bootcamp) {
+            bootcamp.certificateTemplate = await resolveCertificateTemplate(bootcamp.certificateTemplate, 'BOOTCAMP')
           }
         }
         if (c.webinarId) {
-          webinar = await prisma.webinar.findUnique({ where: { id: c.webinarId }, select: { title: true, field: true, bannerUrl: true, certificateTemplate: { select: { bgImage: true, config: true } } } })
-          if (webinar?.certificateTemplate?.config) {
-            webinar.certificateTemplate.config = normalizeTemplateConfig(webinar.certificateTemplate.config)
+          webinar = await prisma.webinar.findUnique({ where: { id: c.webinarId }, select: { title: true, field: true, bannerUrl: true, certificateTemplate: { select: { id: true, name: true, type: true, bgImage: true, config: true } } } })
+          if (webinar) {
+            webinar.certificateTemplate = await resolveCertificateTemplate(webinar.certificateTemplate, 'WEBINAR')
           }
         }
-        return { ...c, course, bootcamp, webinar }
+
+        const certificateTemplate = course?.certificateTemplate || bootcamp?.certificateTemplate || webinar?.certificateTemplate
+
+        return { ...c, course, bootcamp, webinar, certificateTemplate }
       })
     )
 
