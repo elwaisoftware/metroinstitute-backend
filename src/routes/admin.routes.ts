@@ -753,6 +753,23 @@ adminRouter.get('/certificate-templates', async (req: AuthRequest, res: Response
   } catch (err) { next(err) }
 })
 
+function normalizeTemplateConfig(config: any) {
+  if (!Array.isArray(config)) return config
+  return config.map((item: any) => {
+    if (item && item.type === 'image' && item.src) {
+      const isTransparent = Boolean(item.transparentBg)
+      let src = String(item.src)
+      if (isTransparent && src.includes('/image/upload/') && !src.includes('e_make_transparent')) {
+        src = src.replace('/image/upload/', '/image/upload/e_make_transparent:20/')
+      } else if (!isTransparent && src.includes('e_make_transparent:20/')) {
+        src = src.replace('e_make_transparent:20/', '')
+      }
+      return { ...item, src }
+    }
+    return item
+  })
+}
+
 // ── POST /admin/certificate-templates ───────────────────────
 adminRouter.post('/certificate-templates', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -768,7 +785,7 @@ adminRouter.post('/certificate-templates', async (req: AuthRequest, res: Respons
         name: data.name,
         type: data.type,
         bgImage: data.bgImage,
-        config: data.config
+        config: normalizeTemplateConfig(data.config)
       }
     })
     res.status(201).json({ success: true, data: template, message: 'Template berhasil dibuat' })
@@ -786,6 +803,9 @@ adminRouter.patch('/certificate-templates/:id', async (req: AuthRequest, res: Re
       isActive: z.boolean().optional()
     })
     const data = schema.parse(req.body)
+    if (data.config) {
+      data.config = normalizeTemplateConfig(data.config)
+    }
     const template = await prisma.certificateTemplate.update({
       where: { id: (req.params as Record<string, string>).id },
       data
