@@ -1010,6 +1010,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         where.isPublished = true
         if (status === 'CLOSED') where.batchStatus = 'CLOSED'
         else if (status === 'OPEN') where.batchStatus = 'OPEN'
+        else if (status === 'ONGOING') where.batchStatus = 'ONGOING'
         else if (status === 'PUBLISHED') where.batchStatus = 'COMING_SOON'
       }
     }
@@ -1027,29 +1028,16 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       })
     ])
 
-    const now = new Date()
     const mappedItems = items.map((item: any) => {
       let mappedStatus = 'DRAFT'
-      let computedBatchStatus = item.batchStatus
-
-      if (item.batchEndDate && now > item.batchEndDate) {
-        computedBatchStatus = 'CLOSED'
-      } else if (item.batchStartDate && now >= item.batchStartDate) {
-        computedBatchStatus = 'ONGOING'
-      } else if (item.registrationDeadline && now >= item.registrationDeadline) {
-        computedBatchStatus = 'CLOSED'
-      } else if (item.registrationStartDate && now < item.registrationStartDate) {
-        computedBatchStatus = 'COMING_SOON'
-      } else if (item.registrationStartDate && now >= item.registrationStartDate && (!item.registrationDeadline || now < item.registrationDeadline)) {
-        computedBatchStatus = 'OPEN'
-      }
-
       if (item.isPublished) {
-        if (computedBatchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-        else if (computedBatchStatus === 'OPEN') mappedStatus = 'OPEN'
-        else if (computedBatchStatus === 'ONGOING') mappedStatus = 'ONGOING'
-        else if (computedBatchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
-        else mappedStatus = 'DRAFT'
+        if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+        else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
+        else if (item.batchStatus === 'ONGOING') mappedStatus = 'ONGOING'
+        else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+        else mappedStatus = item.batchStatus || 'PUBLISHED'
+      } else {
+        mappedStatus = 'DRAFT'
       }
 
       return {
@@ -1057,7 +1045,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         name: item.title,
         fields: item.field ? [item.field] : [],
         status: mappedStatus,
-        batchStatus: computedBatchStatus,
+        batchStatus: item.batchStatus,
         purchaseOpenAt: item.registrationStartDate,
         purchaseCloseAt: item.registrationDeadline,
         startDate: item.batchStartDate,
@@ -1091,26 +1079,16 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
         isPublished = false
       } else {
         isPublished = true
-        const now = new Date()
-        const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null
-        const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null
-        const startAt = data.startDate ? new Date(data.startDate) : null
-        const endAt = data.endDate ? new Date(data.endDate) : null
-
-        if (endAt && now > endAt) {
-          batchStatus = 'CLOSED'
-        } else if (startAt && now >= startAt) {
-          batchStatus = 'ONGOING'
-        } else if (closeAt && now >= closeAt) {
-          batchStatus = 'CLOSED'
-        } else if (openAt && now < openAt) {
-          batchStatus = 'COMING_SOON'
-        } else if (data.status === 'CLOSED') {
-          batchStatus = 'CLOSED'
+        if (data.status === 'OPEN') {
+          batchStatus = 'OPEN'
         } else if (data.status === 'ONGOING') {
           batchStatus = 'ONGOING'
+        } else if (data.status === 'CLOSED') {
+          batchStatus = 'CLOSED'
+        } else if (data.status === 'PUBLISHED') {
+          batchStatus = 'COMING_SOON'
         } else {
-          batchStatus = 'OPEN'
+          batchStatus = data.status
         }
       }
     }
