@@ -26,6 +26,8 @@ uploads/
 temp-*/
 *.tmp
 *.temp
+*.dump
+*.sql
 
 # OS generated files
 .DS_Store

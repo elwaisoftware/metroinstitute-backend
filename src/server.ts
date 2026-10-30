@@ -89,6 +89,10 @@ app.use((req, _res, next) => {
 })
 
 // ── Health Check ───────────────────────────────────────────
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', message: 'Metro Institute API is running', env: process.env.NODE_ENV })
+})
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV })
 })
@@ -127,11 +131,13 @@ app.use((req: import('express').Request, res: import('express').Response) => {
 app.use(errorHandler)
 
 // ── Start ──────────────────────────────────────────────────
-startCronJobs()
+if (!process.env.VERCEL) {
+  startCronJobs()
 
-app.listen(PORT, () => {
-  logger.info(`Metro Institute Backend berjalan di http://localhost:${PORT}`)
-  logger.info(`Environment: ${process.env.NODE_ENV}`)
-})
+  app.listen(PORT, () => {
+    logger.info(`Metro Institute Backend berjalan di http://localhost:${PORT}`)
+    logger.info(`Environment: ${process.env.NODE_ENV}`)
+  })
+}
 
 export default app
