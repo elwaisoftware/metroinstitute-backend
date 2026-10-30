@@ -35,6 +35,11 @@ adminRouter.use(authenticate, async (req: AuthRequest, _res: Response, next: Nex
 // ── GET /admin/dashboard ───────────────────────────────────
 adminRouter.get('/dashboard', async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const now = new Date()
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const sevenDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6))
+    const thirtyDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29))
+
     const [
       totalMentees,
       newMenteesThisMonth,
@@ -47,14 +52,15 @@ adminRouter.get('/dashboard', async (_req: AuthRequest, res: Response, next: Nex
       transactionsByStatus,
       topCourses,
       topBootcamps,
-      newMenteesLast7Days,
-      enrollmentTrend,
+      recentMenteesLast7Days,
+      recentBootcampEnrollmentsLast30Days,
+      recentCourseEnrollmentsLast30Days,
     ] = await Promise.all([
       prisma.user.count({ where: { role: 'MENTEE' } }),
       prisma.user.count({
         where: {
           role: 'MENTEE',
-          createdAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+          createdAt: { gte: startOfMonth },
         },
       }),
       prisma.transaction.aggregate({
@@ -64,7 +70,7 @@ adminRouter.get('/dashboard', async (_req: AuthRequest, res: Response, next: Nex
       prisma.transaction.aggregate({
         where: {
           status: 'SUCCESS',
-          paidAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+          paidAt: { gte: startOfMonth },
         },
         _sum: { amount: true },
       }),
@@ -96,41 +102,54 @@ adminRouter.get('/dashboard', async (_req: AuthRequest, res: Response, next: Nex
         take: 5,
         select: { id: true, title: true, field: true, enrollmentCount: true, rating: true, price: true, batchStatus: true },
       }),
-      // New mentees last 7 days
-      Promise.all(
-        Array.from({ length: 7 }, (_, i) => {
-          const d = new Date()
-          d.setDate(d.getDate() - i)
-          const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-          const dayEnd   = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
-          return prisma.user.count({
-            where: { role: 'MENTEE', createdAt: { gte: dayStart, lt: dayEnd } },
-          }).then((count) => ({ date: dayStart.toISOString().split('T')[0], count }))
-        })
-      ),
-      // Enrollment trend last 30 days
-      Promise.all(
-        Array.from({ length: 30 }, (_, i) => {
-          const d = new Date()
-          d.setDate(d.getDate() - (29 - i)) // oldest to newest
-          const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-          const dayEnd   = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
-          
-          return Promise.all([
-            prisma.bootcampEnrollment.count({
-              where: { createdAt: { gte: dayStart, lt: dayEnd } }
-            }),
-            prisma.courseEnrollment.count({
-              where: { createdAt: { gte: dayStart, lt: dayEnd } }
-            })
-          ]).then(([bootcamp, course]) => ({
-            date: dayStart.toISOString().split('T')[0],
-            bootcamp,
-            course
-          }))
-        })
-      ),
+      // Query 7 days of mentee registrations in 1 query instead of 7
+      prisma.user.findMany({
+        where: { role: 'MENTEE', createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true },
+      }),
+      // Query 30 days of enrollments in 2 queries instead of 60
+      prisma.bootcampEnrollment.findMany({
+        where: { createdAt: { gte: thirtyDaysAgo } },
+        select: { createdAt: true },
+      }),
+      prisma.courseEnrollment.findMany({
+        where: { createdAt: { gte: thirtyDaysAgo } },
+        select: { createdAt: true },
+      }),
     ])
+
+    // Aggregate mentees for the last 7 days (oldest to newest)
+    const menteeCountByDate: Record<string, number> = {}
+    for (const m of recentMenteesLast7Days) {
+      const dStr = m.createdAt.toISOString().split('T')[0]
+      menteeCountByDate[dStr] = (menteeCountByDate[dStr] || 0) + 1
+    }
+    const newMenteesLast7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (6 - i)))
+      const dStr = d.toISOString().split('T')[0]
+      return { date: dStr, count: menteeCountByDate[dStr] || 0 }
+    })
+
+    // Aggregate bootcamp & course enrollments for the last 30 days (oldest to newest)
+    const bootcampCountByDate: Record<string, number> = {}
+    for (const b of recentBootcampEnrollmentsLast30Days) {
+      const dStr = b.createdAt.toISOString().split('T')[0]
+      bootcampCountByDate[dStr] = (bootcampCountByDate[dStr] || 0) + 1
+    }
+    const courseCountByDate: Record<string, number> = {}
+    for (const c of recentCourseEnrollmentsLast30Days) {
+      const dStr = c.createdAt.toISOString().split('T')[0]
+      courseCountByDate[dStr] = (courseCountByDate[dStr] || 0) + 1
+    }
+    const enrollmentTrend = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (29 - i)))
+      const dStr = d.toISOString().split('T')[0]
+      return {
+        date: dStr,
+        bootcamp: bootcampCountByDate[dStr] || 0,
+        course: courseCountByDate[dStr] || 0,
+      }
+    })
 
     const txStatusMap = Object.fromEntries(
       transactionsByStatus.map((s) => [s.status, s._count.id])
@@ -156,11 +175,14 @@ adminRouter.get('/dashboard', async (_req: AuthRequest, res: Response, next: Nex
         recentTransactions,
         topCourses,
         topBootcamps,
-        newMenteesLast7Days: newMenteesLast7Days.reverse(), // oldest → newest
+        newMenteesLast7Days,
         enrollmentTrend,
       },
     })
-  } catch (err) { next(err) }
+  } catch (err) {
+    console.error('Error fetching admin dashboard data:', err)
+    next(err)
+  }
 })
 
 // ── GET /admin/mentees ─────────────────────────────────────
