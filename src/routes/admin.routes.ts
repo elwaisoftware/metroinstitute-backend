@@ -2017,6 +2017,16 @@ adminRouter.get('/certificates', async (req: AuthRequest, res: Response, next: N
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── GET /admin/webinars ──────────────────────────────────────
+const computeWebinarStatus = (w: any) => {
+  if (w.isEnded) return 'COMPLETED'
+  if (!w.isPublished) return 'DRAFT'
+  const scheduledTime = new Date(w.scheduledAt).getTime()
+  const closeTime = scheduledTime - 2 * 60 * 60 * 1000
+  const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
+  if (Date.now() >= closeTime || isFull) return 'CLOSED'
+  return 'OPEN'
+}
+
 adminRouter.get('/webinars', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { search, field, status, page = '1', limit = '10' } = req.query as Record<string, string>
@@ -2025,9 +2035,26 @@ adminRouter.get('/webinars', async (req: AuthRequest, res: Response, next: NextF
     const skip = (p - 1) * l
 
     const where: any = {}
+    const now = new Date()
+    const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+
     if (field && field !== 'ALL') where.field = field
-    if (status === 'DRAFT') where.isPublished = false
-    if (status === 'PUBLISHED') where.isPublished = true
+
+    if (status === 'DRAFT') {
+      where.isPublished = false
+    } else if (status === 'COMPLETED') {
+      where.isEnded = true
+    } else if (status === 'OPEN') {
+      where.isPublished = true
+      where.isEnded = false
+      where.scheduledAt = { gt: twoHoursLater }
+    } else if (status === 'CLOSED') {
+      where.isPublished = true
+      where.isEnded = false
+      where.scheduledAt = { lte: twoHoursLater }
+    } else if (status === 'PUBLISHED') {
+      where.isPublished = true
+    }
 
     if (search) {
       where.OR = [
@@ -2051,10 +2078,16 @@ adminRouter.get('/webinars', async (req: AuthRequest, res: Response, next: NextF
       }),
     ])
 
+    const mappedItems = items.map((w: any) => ({
+      ...w,
+      status: computeWebinarStatus(w),
+      isRegistrationClosed: Boolean(w.isEnded || Date.now() >= (new Date(w.scheduledAt).getTime() - 2 * 60 * 60 * 1000)),
+    }))
+
     res.json({
       success: true,
       data: {
-        items,
+        items: mappedItems,
         pagination: { total, page: p, limit: l, totalPages: Math.ceil(total / l) },
       },
     })

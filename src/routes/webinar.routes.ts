@@ -46,13 +46,29 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
       },
     })
 
-    const items = webinars.map((w: any) => ({
-      ...w,
-      endedAt: w.endedAt || (w.isEnded ? w.updatedAt : null),
-      isRegistered: userId ? (w.registrations?.length > 0) : false,
-      registrations: undefined,
-      meetingUrl: (userId && w.registrations?.length > 0) ? w.meetingUrl : null,
-    }))
+    const computeWebinarStatus = (w: any) => {
+      if (w.isEnded) return 'COMPLETED'
+      if (!w.isPublished) return 'DRAFT'
+      const scheduledTime = new Date(w.scheduledAt).getTime()
+      const closeTime = scheduledTime - 2 * 60 * 60 * 1000
+      const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
+      if (Date.now() >= closeTime || isFull) return 'CLOSED'
+      return 'OPEN'
+    }
+
+    const items = webinars.map((w: any) => {
+      const scheduledTime = new Date(w.scheduledAt).getTime()
+      const isRegistrationClosed = Boolean(w.isEnded || Date.now() >= (scheduledTime - 2 * 60 * 60 * 1000))
+      return {
+        ...w,
+        status: computeWebinarStatus(w),
+        isRegistrationClosed,
+        endedAt: w.endedAt || (w.isEnded ? w.updatedAt : null),
+        isRegistered: userId ? (w.registrations?.length > 0) : false,
+        registrations: undefined,
+        meetingUrl: (userId && w.registrations?.length > 0) ? w.meetingUrl : null,
+      }
+    })
 
     res.json({ success: true, data: items })
   } catch (err) { next(err) }
@@ -127,10 +143,23 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
       attendance = await getMenteeWebinarAttendance(id, userId)
     }
 
+    const registrationDeadlineMs = scheduledTime - 2 * 60 * 60 * 1000
+    const isRegistrationClosed = Boolean(isEnded || nowMs >= registrationDeadlineMs)
+    const computeWebinarStatus = (w: any) => {
+      if (isEnded) return 'COMPLETED'
+      if (!w.isPublished) return 'DRAFT'
+      const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
+      if (isRegistrationClosed || isFull) return 'CLOSED'
+      return 'OPEN'
+    }
+
     res.json({
       success: true,
       data: {
         ...webinar,
+        status: computeWebinarStatus(webinar),
+        isRegistrationClosed,
+        registrationDeadline: new Date(registrationDeadlineMs).toISOString(),
         endedAt: effectiveEndedAt,
         isRegistered,
         registrations: undefined,
@@ -168,6 +197,13 @@ webinarRouter.post('/:id/register', authenticate, async (req: AuthRequest, res: 
 
     if (!webinar) throw createError(404, 'Webinar tidak ditemukan')
     if (!webinar.isPublished) throw createError(400, 'Webinar belum dipublikasikan')
+    if (webinar.isEnded) throw createError(400, 'Webinar telah selesai')
+
+    const scheduledTime = new Date(webinar.scheduledAt).getTime()
+    const registrationDeadline = scheduledTime - 2 * 60 * 60 * 1000 // H-2 jam
+    if (Date.now() >= registrationDeadline) {
+      throw createError(400, 'Pendaftaran ditutup karena telah mencapai batas waktu H-2 jam sebelum acara')
+    }
 
     // Check quota
     if (webinar.quota && webinar._count.registrations >= webinar.quota) {
