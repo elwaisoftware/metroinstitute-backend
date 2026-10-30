@@ -12,7 +12,7 @@ export const bootcampRouter = Router()
 bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, field, level, status } = req.query as Record<string, string>
-    const where: Record<string, unknown> = { isPublished: true }
+    const where: Record<string, unknown> = { isPublished: true, chapters: { some: { sessions: { some: {} } } } }
     if (field) where.field = field
     if (level) where.level = level
     if (status) where.batchStatus = status

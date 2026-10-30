@@ -957,6 +957,10 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
   try {
     // Frontend sends: name, description, fields[], price, purchaseOpenAt, purchaseCloseAt, startDate, endDate, status, certificateTemplateId
     const data = req.body
+
+    if (data.status && data.status !== 'DRAFT') {
+      throw createError(400, 'Bootcamp baru belum memiliki kurikulum. Kurikulum harus dibuat terlebih dahulu di menu Silabus sebelum dapat dipublikasikan.')
+    }
     
     let isPublished = false
     let batchStatus = 'COMING_SOON'
@@ -1023,14 +1027,24 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         skip: (p - 1) * l,
         take: l,
         include: {
-          _count: { select: { enrollments: true } }
+          _count: { select: { enrollments: true } },
+          chapters: {
+            select: {
+              id: true,
+              _count: { select: { sessions: true } },
+            },
+          },
         }
       })
     ])
 
     const mappedItems = items.map((item: any) => {
+      const totalChapters = item.chapters?.length || 0
+      const totalSessions = item.chapters?.reduce((acc: number, ch: any) => acc + (ch._count?.sessions || 0), 0) || 0
+      const hasCurriculum = totalChapters > 0 && totalSessions > 0
+
       let mappedStatus = 'DRAFT'
-      if (item.isPublished) {
+      if (item.isPublished && hasCurriculum) {
         if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
         else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
         else if (item.batchStatus === 'ONGOING') mappedStatus = 'ONGOING'
@@ -1042,6 +1056,9 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
 
       return {
         ...item,
+        totalChapters,
+        totalSessions,
+        hasCurriculum,
         name: item.title,
         fields: item.field ? [item.field] : [],
         status: mappedStatus,
@@ -1070,6 +1087,15 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
   try {
     const { id } = req.params as Record<string, string>
     const data = req.body
+
+    if (data.status && data.status !== 'DRAFT') {
+      const sessionCount = await prisma.bootcampSession.count({
+        where: { chapter: { bootcampId: id } }
+      })
+      if (sessionCount === 0) {
+        throw createError(400, 'Tidak dapat mempublikasikan bootcamp: Kurikulum belum ada. Tambahkan minimal 1 bab dan 1 materi/sesi di menu Silabus terlebih dahulu.')
+      }
+    }
 
     let isPublished = undefined
     let batchStatus = undefined
@@ -1120,11 +1146,23 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
   try {
     const { id } = req.params as Record<string, string>
     const bootcamp = await prisma.bootcamp.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        chapters: {
+          select: {
+            id: true,
+            _count: { select: { sessions: true } },
+          },
+        },
+      },
     })
     
     if (!bootcamp) return next(createError(404, 'Bootcamp tidak ditemukan'))
     
+    const totalChapters = bootcamp.chapters?.length || 0
+    const totalSessions = bootcamp.chapters?.reduce((acc: number, ch: any) => acc + (ch._count?.sessions || 0), 0) || 0
+    const hasCurriculum = totalChapters > 0 && totalSessions > 0
+
     let mappedStatus = 'DRAFT'
     let computedBatchStatus = bootcamp.batchStatus
     const now = new Date()
@@ -1140,14 +1178,16 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
       computedBatchStatus = 'OPEN'
     }
 
-    if (bootcamp.isPublished) {
+    if (bootcamp.isPublished && hasCurriculum) {
       if (computedBatchStatus === 'CLOSED') mappedStatus = 'CLOSED'
       else if (computedBatchStatus === 'OPEN') mappedStatus = 'OPEN'
       else if (computedBatchStatus === 'ONGOING') mappedStatus = 'ONGOING'
       else if (computedBatchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+    } else {
+      mappedStatus = 'DRAFT'
     }
 
-    res.json({ success: true, data: { ...bootcamp, status: mappedStatus, batchStatus: computedBatchStatus } })
+    res.json({ success: true, data: { ...bootcamp, status: mappedStatus, batchStatus: computedBatchStatus, totalChapters, totalSessions, hasCurriculum } })
   } catch (err) { next(err) }
 })
 
@@ -1358,6 +1398,10 @@ adminRouter.patch('/bootcamps/:id/featured', async (req: AuthRequest, res: Respo
 adminRouter.post('/courses', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const data = req.body
+
+    if (data.status === 'PUBLISHED') {
+      throw createError(400, 'Mini course baru belum memiliki kurikulum. Kurikulum harus dibuat terlebih dahulu di menu Kurikulum sebelum dapat dipublikasikan.')
+    }
     
     const course = await prisma.miniCourse.create({
       data: {
@@ -1383,6 +1427,15 @@ adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: 
   try {
     const { id } = req.params as Record<string, string>
     const data = req.body
+
+    if (data.status === 'PUBLISHED') {
+      const sessionCount = await prisma.courseSession.count({
+        where: { chapter: { courseId: id } }
+      })
+      if (sessionCount === 0) {
+        throw createError(400, 'Tidak dapat mempublikasikan mini course: Kurikulum belum ada. Tambahkan minimal 1 bab dan 1 materi di menu Kurikulum terlebih dahulu.')
+      }
+    }
     
     const updatePayload: any = {
       title: data.title,

@@ -19,6 +19,7 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
     const isAdmin = req.user?.role === 'SUPER_ADMIN'
     if (!isAdmin) {
       where.isPublished = true
+      where.chapters = { some: { sessions: { some: {} } } }
     } else if (status) {
       where.isPublished = status === 'PUBLISHED'
     }
@@ -47,13 +48,28 @@ courseRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunction
             reviews: true,
           },
         },
+        chapters: {
+          select: {
+            id: true,
+            _count: { select: { sessions: true } },
+          },
+        },
       },
     })
 
-    const mappedCourses = courses.map((c: any) => ({
-      ...c,
-      status: c.isPublished ? 'PUBLISHED' : 'DRAFT',
-    }))
+    const mappedCourses = courses.map((c: any) => {
+      const totalChapters = c.chapters?.length || 0
+      const totalSessions = c.chapters?.reduce((acc: number, ch: any) => acc + (ch._count?.sessions || 0), 0) || 0
+      const hasCurriculum = totalChapters > 0 && totalSessions > 0
+
+      return {
+        ...c,
+        totalChapters,
+        totalSessions,
+        hasCurriculum,
+        status: (c.isPublished && hasCurriculum) ? 'PUBLISHED' : 'DRAFT',
+      }
+    })
 
     res.json({ success: true, data: mappedCourses })
   } catch (err) { next(err) }
