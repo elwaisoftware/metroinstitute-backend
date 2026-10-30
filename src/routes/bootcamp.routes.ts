@@ -25,7 +25,7 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
         id: true, title: true, shortDescription: true, field: true, level: true,
         price: true, thumbnailUrl: true, totalDuration: true, rating: true,
         reviewCount: true, enrollmentCount: true, batchStatus: true,
-        registrationStartDate: true, registrationDeadline: true, batchStartDate: true,
+        registrationStartDate: true, registrationDeadline: true, batchStartDate: true, batchEndDate: true,
         mentorName: true, mentorPhotoUrl: true, tags: true,
         isPublished: true, isFeatured: true,
       },
@@ -34,11 +34,16 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
     const now = new Date()
     const mappedBootcamps = bootcamps.map(b => {
       let computedStatus = b.batchStatus
-      if (computedStatus === 'COMING_SOON' && b.registrationStartDate && now >= b.registrationStartDate) {
-        computedStatus = 'OPEN'
-      }
-      if (computedStatus === 'OPEN' && b.registrationDeadline && now >= b.registrationDeadline) {
+      if (b.batchEndDate && now > b.batchEndDate) {
         computedStatus = 'CLOSED'
+      } else if (b.batchStartDate && now >= b.batchStartDate) {
+        computedStatus = 'ONGOING'
+      } else if (b.registrationDeadline && now >= b.registrationDeadline) {
+        computedStatus = 'CLOSED'
+      } else if (b.registrationStartDate && now < b.registrationStartDate) {
+        computedStatus = 'COMING_SOON'
+      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!b.registrationDeadline || now < b.registrationDeadline)) {
+        computedStatus = 'OPEN'
       }
       return { ...b, batchStatus: computedStatus }
     })
@@ -122,11 +127,16 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
 
     let computedBatchStatus = bootcamp.batchStatus
     const now = new Date()
-    if (computedBatchStatus === 'COMING_SOON' && bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate) {
-      computedBatchStatus = 'OPEN'
-    }
-    if (computedBatchStatus === 'OPEN' && bootcamp.registrationDeadline && now >= bootcamp.registrationDeadline) {
+    if (bootcamp.batchEndDate && now > bootcamp.batchEndDate) {
       computedBatchStatus = 'CLOSED'
+    } else if (bootcamp.batchStartDate && now >= bootcamp.batchStartDate) {
+      computedBatchStatus = 'ONGOING'
+    } else if (bootcamp.registrationDeadline && now >= bootcamp.registrationDeadline) {
+      computedBatchStatus = 'CLOSED'
+    } else if (bootcamp.registrationStartDate && now < bootcamp.registrationStartDate) {
+      computedBatchStatus = 'COMING_SOON'
+    } else if (bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate && (!bootcamp.registrationDeadline || now < bootcamp.registrationDeadline)) {
+      computedBatchStatus = 'OPEN'
     }
 
     // Normalize reviews to use consistent field name

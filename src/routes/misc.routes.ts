@@ -51,6 +51,10 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
           thumbnailUrl: true, batchStatus: true, rating: true, mentorName: true, shortDescription: true,
           description: true,
           outcomes: true,
+          registrationStartDate: true,
+          registrationDeadline: true,
+          batchStartDate: true,
+          batchEndDate: true,
         },
       }),
       prisma.miniCourse.findMany({
@@ -84,11 +88,31 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
     // Convert key-value rows to object
     const config = Object.fromEntries(configRows.map((r) => [r.key, r.value]))
 
+    const now = new Date()
+    const mappedFeaturedBootcamps = featuredBootcamps.map((b) => {
+      let computedStatus = b.batchStatus
+      if (b.batchEndDate && now > b.batchEndDate) {
+        computedStatus = 'CLOSED'
+      } else if (b.batchStartDate && now >= b.batchStartDate) {
+        computedStatus = 'ONGOING'
+      } else if (b.registrationDeadline && now >= b.registrationDeadline) {
+        computedStatus = 'CLOSED'
+      } else if (b.registrationStartDate && now < b.registrationStartDate) {
+        computedStatus = 'COMING_SOON'
+      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!b.registrationDeadline || now < b.registrationDeadline)) {
+        computedStatus = 'OPEN'
+      }
+      return {
+        ...b,
+        batchStatus: computedStatus,
+      }
+    })
+
     res.json({
       success: true,
       data: {
         config,
-        featuredBootcamps,
+        featuredBootcamps: mappedFeaturedBootcamps,
         featuredCourses,
         featuredWebinars,
         stats: {

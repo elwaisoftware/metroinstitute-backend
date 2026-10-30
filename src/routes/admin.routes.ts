@@ -1005,13 +1005,29 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       })
     ])
 
+    const now = new Date()
     const mappedItems = items.map((item: any) => {
       let mappedStatus = 'DRAFT'
+      let computedBatchStatus = item.batchStatus
+
+      if (item.batchEndDate && now > item.batchEndDate) {
+        computedBatchStatus = 'CLOSED'
+      } else if (item.batchStartDate && now >= item.batchStartDate) {
+        computedBatchStatus = 'ONGOING'
+      } else if (item.registrationDeadline && now >= item.registrationDeadline) {
+        computedBatchStatus = 'CLOSED'
+      } else if (item.registrationStartDate && now < item.registrationStartDate) {
+        computedBatchStatus = 'COMING_SOON'
+      } else if (item.registrationStartDate && now >= item.registrationStartDate && (!item.registrationDeadline || now < item.registrationDeadline)) {
+        computedBatchStatus = 'OPEN'
+      }
+
       if (item.isPublished) {
-        if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-        else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
-        else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
-        else mappedStatus = 'DRAFT' // Fallback for legacy statuses
+        if (computedBatchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+        else if (computedBatchStatus === 'OPEN') mappedStatus = 'OPEN'
+        else if (computedBatchStatus === 'ONGOING') mappedStatus = 'ONGOING'
+        else if (computedBatchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+        else mappedStatus = 'DRAFT'
       }
 
       return {
@@ -1019,6 +1035,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         name: item.title,
         fields: item.field ? [item.field] : [],
         status: mappedStatus,
+        batchStatus: computedBatchStatus,
         purchaseOpenAt: item.registrationStartDate,
         purchaseCloseAt: item.registrationDeadline,
         startDate: item.batchStartDate,
@@ -1048,17 +1065,31 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     let batchStatus = undefined
 
     if (data.status) {
-      if (data.status === 'DRAFT') { isPublished = false }
-      if (data.status === 'OPEN') { isPublished = true; batchStatus = 'OPEN' }
-      if (data.status === 'CLOSED') { isPublished = true; batchStatus = 'CLOSED' }
-      if (data.status === 'PUBLISHED') {
+      if (data.status === 'DRAFT') {
+        isPublished = false
+      } else {
         isPublished = true
-        batchStatus = 'COMING_SOON'
         const now = new Date()
         const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null
         const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null
-        if (openAt && now >= openAt) batchStatus = 'OPEN'
-        if (closeAt && now >= closeAt) batchStatus = 'CLOSED'
+        const startAt = data.startDate ? new Date(data.startDate) : null
+        const endAt = data.endDate ? new Date(data.endDate) : null
+
+        if (endAt && now > endAt) {
+          batchStatus = 'CLOSED'
+        } else if (startAt && now >= startAt) {
+          batchStatus = 'ONGOING'
+        } else if (closeAt && now >= closeAt) {
+          batchStatus = 'CLOSED'
+        } else if (openAt && now < openAt) {
+          batchStatus = 'COMING_SOON'
+        } else if (data.status === 'CLOSED') {
+          batchStatus = 'CLOSED'
+        } else if (data.status === 'ONGOING') {
+          batchStatus = 'ONGOING'
+        } else {
+          batchStatus = 'OPEN'
+        }
       }
     }
 
@@ -1095,13 +1126,28 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
     if (!bootcamp) return next(createError(404, 'Bootcamp tidak ditemukan'))
     
     let mappedStatus = 'DRAFT'
-    if (bootcamp.isPublished) {
-      if (bootcamp.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-      else if (bootcamp.batchStatus === 'OPEN') mappedStatus = 'OPEN'
-      else if (bootcamp.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+    let computedBatchStatus = bootcamp.batchStatus
+    const now = new Date()
+    if (bootcamp.batchEndDate && now > bootcamp.batchEndDate) {
+      computedBatchStatus = 'CLOSED'
+    } else if (bootcamp.batchStartDate && now >= bootcamp.batchStartDate) {
+      computedBatchStatus = 'ONGOING'
+    } else if (bootcamp.registrationDeadline && now >= bootcamp.registrationDeadline) {
+      computedBatchStatus = 'CLOSED'
+    } else if (bootcamp.registrationStartDate && now < bootcamp.registrationStartDate) {
+      computedBatchStatus = 'COMING_SOON'
+    } else if (bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate && (!bootcamp.registrationDeadline || now < bootcamp.registrationDeadline)) {
+      computedBatchStatus = 'OPEN'
     }
 
-    res.json({ success: true, data: { ...bootcamp, status: mappedStatus } })
+    if (bootcamp.isPublished) {
+      if (computedBatchStatus === 'CLOSED') mappedStatus = 'CLOSED'
+      else if (computedBatchStatus === 'OPEN') mappedStatus = 'OPEN'
+      else if (computedBatchStatus === 'ONGOING') mappedStatus = 'ONGOING'
+      else if (computedBatchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+    }
+
+    res.json({ success: true, data: { ...bootcamp, status: mappedStatus, batchStatus: computedBatchStatus } })
   } catch (err) { next(err) }
 })
 
