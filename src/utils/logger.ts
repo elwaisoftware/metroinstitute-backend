@@ -8,17 +8,15 @@ const logFormat = printf(({ level, message, timestamp, stack, ...meta }) => {
   return `${timestamp} [${level}]: ${stack || message}${metaStr}`
 })
 
-export const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  format: combine(
-    errors({ stack: true }),
-    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    logFormat,
-  ),
-  transports: [
-    new winston.transports.Console({
-      format: combine(colorize(), errors({ stack: true }), timestamp({ format: 'HH:mm:ss' }), logFormat),
-    }),
+const transports: winston.transport[] = [
+  new winston.transports.Console({
+    format: combine(colorize(), errors({ stack: true }), timestamp({ format: 'HH:mm:ss' }), logFormat),
+  }),
+]
+
+// Only write to file if NOT on Vercel/serverless (read-only filesystem on Vercel)
+if (!process.env.VERCEL) {
+  transports.push(
     new winston.transports.File({
       filename: path.join(process.cwd(), 'logs', 'error.log'),
       level: 'error',
@@ -30,5 +28,15 @@ export const logger = winston.createLogger({
       maxsize: 10 * 1024 * 1024,
       maxFiles: 10,
     }),
-  ],
+  )
+}
+
+export const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: combine(
+    errors({ stack: true }),
+    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    logFormat,
+  ),
+  transports,
 })
