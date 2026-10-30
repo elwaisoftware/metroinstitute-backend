@@ -888,7 +888,7 @@ adminRouter.post('/upload', upload.single('file'), async (req: AuthRequest, res:
 adminRouter.post('/bunny/create-upload', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { title } = req.body || {}
-    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '776427'
+    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '794949'
     const apiKey = process.env.BUNNY_STREAM_API_KEY
     if (!apiKey) throw createError(500, 'BUNNY_STREAM_API_KEY belum dikonfigurasi di server')
 
@@ -939,7 +939,7 @@ adminRouter.post('/bunny/create-upload', async (req: AuthRequest, res: Response,
 adminRouter.delete('/bunny/video/:videoId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { videoId } = req.params
-    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '776427'
+    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID || '794949'
     const apiKey = process.env.BUNNY_STREAM_API_KEY
     if (!apiKey || !videoId) return res.json({ success: true, message: 'Skipped' })
 
