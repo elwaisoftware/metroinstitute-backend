@@ -1198,13 +1198,30 @@ adminRouter.delete('/bootcamps/:id', async (req: AuthRequest, res: Response, nex
     const bootcamp = await prisma.bootcamp.findUnique({ where: { id } })
     if (!bootcamp) return res.status(404).json({ success: false, message: 'Bootcamp tidak ditemukan' })
 
-    await prisma.$transaction([
-      prisma.review.deleteMany({ where: { bootcampId: id } }),
-      prisma.wishlistItem.deleteMany({ where: { bootcampId: id } }),
-      prisma.certificate.deleteMany({ where: { bootcampId: id } }),
-      prisma.transaction.updateMany({ where: { bootcampId: id }, data: { bootcampId: null } }),
-      prisma.bootcamp.delete({ where: { id } }),
-    ])
+    const chapters = await prisma.bootcampChapter.findMany({
+      where: { bootcampId: id },
+      select: { id: true, sessions: { select: { id: true } } }
+    })
+    const sessionIds = chapters.flatMap(ch => ch.sessions.map(s => s.id))
+
+    await prisma.$transaction(async (tx) => {
+      if (sessionIds.length > 0) {
+        await tx.liveAttendance.deleteMany({ where: { sessionId: { in: sessionIds } } })
+        await tx.sessionProgress.deleteMany({ where: { bootcampSessionId: { in: sessionIds } } })
+        await tx.assignment.deleteMany({ where: { bootcampSessionId: { in: sessionIds } } })
+        await tx.sessionRating.deleteMany({ where: { bootcampSessionId: { in: sessionIds } } })
+        await tx.qnaMessage.deleteMany({ where: { bootcampSessionId: { in: sessionIds } } })
+        await tx.note.deleteMany({ where: { bootcampSessionId: { in: sessionIds } } })
+      }
+      await tx.review.deleteMany({ where: { bootcampId: id } })
+      await tx.wishlistItem.deleteMany({ where: { bootcampId: id } })
+      await tx.certificate.deleteMany({ where: { bootcampId: id } })
+      await tx.bootcampEnrollment.deleteMany({ where: { bootcampId: id } })
+      await tx.transaction.updateMany({ where: { bootcampId: id }, data: { bootcampId: null } })
+      await tx.bootcampSession.deleteMany({ where: { chapter: { bootcampId: id } } })
+      await tx.bootcampChapter.deleteMany({ where: { bootcampId: id } })
+      await tx.bootcamp.delete({ where: { id } })
+    })
 
     res.json({ success: true, message: 'Bootcamp berhasil dihapus' })
   } catch (err) { next(err) }
@@ -1488,13 +1505,29 @@ adminRouter.delete('/courses/:id', async (req: AuthRequest, res: Response, next:
     const course = await prisma.miniCourse.findUnique({ where: { id } })
     if (!course) return res.status(404).json({ success: false, message: 'Mini course tidak ditemukan' })
 
-    await prisma.$transaction([
-      prisma.review.deleteMany({ where: { courseId: id } }),
-      prisma.wishlistItem.deleteMany({ where: { courseId: id } }),
-      prisma.certificate.deleteMany({ where: { courseId: id } }),
-      prisma.transaction.updateMany({ where: { courseId: id }, data: { courseId: null } }),
-      prisma.miniCourse.delete({ where: { id } }),
-    ])
+    const chapters = await prisma.courseChapter.findMany({
+      where: { courseId: id },
+      select: { id: true, sessions: { select: { id: true } } }
+    })
+    const sessionIds = chapters.flatMap(ch => ch.sessions.map(s => s.id))
+
+    await prisma.$transaction(async (tx) => {
+      if (sessionIds.length > 0) {
+        await tx.sessionProgress.deleteMany({ where: { courseSessionId: { in: sessionIds } } })
+        await tx.assignment.deleteMany({ where: { courseSessionId: { in: sessionIds } } })
+        await tx.sessionRating.deleteMany({ where: { courseSessionId: { in: sessionIds } } })
+        await tx.qnaMessage.deleteMany({ where: { courseSessionId: { in: sessionIds } } })
+        await tx.note.deleteMany({ where: { courseSessionId: { in: sessionIds } } })
+      }
+      await tx.review.deleteMany({ where: { courseId: id } })
+      await tx.wishlistItem.deleteMany({ where: { courseId: id } })
+      await tx.certificate.deleteMany({ where: { courseId: id } })
+      await tx.courseEnrollment.deleteMany({ where: { courseId: id } })
+      await tx.transaction.updateMany({ where: { courseId: id }, data: { courseId: null } })
+      await tx.courseSession.deleteMany({ where: { chapter: { courseId: id } } })
+      await tx.courseChapter.deleteMany({ where: { courseId: id } })
+      await tx.miniCourse.delete({ where: { id } })
+    })
     res.json({ success: true, message: 'Mini course berhasil dihapus' })
   } catch (err) { next(err) }
 })
