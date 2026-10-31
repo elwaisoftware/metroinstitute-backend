@@ -433,47 +433,60 @@ bootcampRouter.get('/:bootcampId/my-attendance', authenticate, async (req: AuthR
       select: { id: true, credentialId: true, issuedAt: true },
     })
 
-    const sessionsData = allSessions.map((s) => {
-      const isCompleted = completedIds.has(s.id)
-      const durationMin = s.videoDuration ? Math.ceil(s.videoDuration / 60) : 90
-      const minRequiredMin = Math.ceil(durationMin * 0.8)
-      const att = attendanceMap.get(s.id)
+    const now = new Date()
+    const sessionsData = chapters.flatMap((ch) => {
+      const liveSess = ch.sessions.find((s) => s.type === 'LIVE')
+      const liveScheduledAt = liveSess?.liveScheduledAt || null
+      const liveDurationMin = liveSess?.videoDuration ? Math.ceil(liveSess.videoDuration / 60) : 90
+      const isLiveEnded = liveScheduledAt
+        ? new Date(new Date(liveScheduledAt).getTime() + liveDurationMin * 60000) <= now
+        : false
 
-      let attendanceStatus = 'NOT_RECORDED'
-      if (att) {
-        attendanceStatus = att.status
-      } else if (s.type === 'LIVE' && s.liveScheduledAt && new Date(s.liveScheduledAt) < new Date()) {
-        attendanceStatus = 'ABSENT'
-      }
+      return ch.sessions.map((s) => {
+        const isCompleted = completedIds.has(s.id)
+        const durationMin = s.videoDuration ? Math.ceil(s.videoDuration / 60) : 90
+        const minRequiredMin = Math.ceil(durationMin * 0.8)
+        const att = attendanceMap.get(s.id)
 
-      return {
-        id: s.id,
-        chapterTitle: s.chapterTitle,
-        title: s.title,
-        type: s.type,
-        orderIndex: s.orderIndex,
-        liveScheduledAt: s.liveScheduledAt,
-        durationMinutes: durationMin,
-        minRequiredMinutes: minRequiredMin,
-        isCompleted,
-        attendance: att ? {
-          status: att.status,
-          durationMinutes: att.durationMinutes,
+        let attendanceStatus = 'NOT_RECORDED'
+        if (att) {
+          attendanceStatus = att.status
+        } else if (s.type === 'LIVE' && s.liveScheduledAt && new Date(s.liveScheduledAt) < now) {
+          attendanceStatus = 'ABSENT'
+        }
+
+        return {
+          id: s.id,
+          chapterId: ch.id,
+          chapterTitle: ch.title,
+          title: s.title,
+          type: s.type,
+          orderIndex: s.orderIndex,
+          liveScheduledAt: s.liveScheduledAt || liveScheduledAt,
+          chapterLiveScheduledAt: liveScheduledAt,
+          isChapterLiveEnded: isLiveEnded,
+          durationMinutes: durationMin,
           minRequiredMinutes: minRequiredMin,
-          joinTime: att.joinTime,
-          leaveTime: att.leaveTime,
-          adminNotes: att.adminNotes,
-          source: att.source,
-        } : (s.type === 'LIVE' ? {
-          status: attendanceStatus,
-          durationMinutes: 0,
-          minRequiredMinutes: minRequiredMin,
-          joinTime: null,
-          leaveTime: null,
-          adminNotes: null,
-          source: 'GOOGLE_MEET_API',
-        } : null),
-      }
+          isCompleted,
+          attendance: att ? {
+            status: att.status,
+            durationMinutes: att.durationMinutes,
+            minRequiredMinutes: minRequiredMin,
+            joinTime: att.joinTime,
+            leaveTime: att.leaveTime,
+            adminNotes: att.adminNotes,
+            source: att.source,
+          } : (s.type === 'LIVE' ? {
+            status: attendanceStatus,
+            durationMinutes: 0,
+            minRequiredMinutes: minRequiredMin,
+            joinTime: null,
+            leaveTime: null,
+            adminNotes: null,
+            source: 'GOOGLE_MEET_API',
+          } : null),
+        }
+      })
     })
 
     const totalSessions = allSessions.length

@@ -4,7 +4,7 @@ import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { WhatsAppService } from '../services/whatsapp.service'
-import { getSessionAttendanceDetails, updateAttendanceStatus, getWebinarAttendanceDetails, overrideWebinarAttendance } from '../services/attendance.service'
+import { getSessionAttendanceDetails, updateAttendanceStatus, getWebinarAttendanceDetails, overrideWebinarAttendance, processGoogleMeetAttendance } from '../services/attendance.service'
 import multer from 'multer'
 import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
@@ -2409,6 +2409,35 @@ const handleUpdateSessionAttendance = async (req: AuthRequest, res: Response, ne
 
 adminRouter.patch('/bootcamps/sessions/:sessionId/attendance/:userId', handleUpdateSessionAttendance)
 adminRouter.patch('/bootcamps/:bootcampId/sessions/:sessionId/attendance/:userId', handleUpdateSessionAttendance)
+
+// ── POST /admin/bootcamps/:bootcampId/sessions/:sessionId/attendance/sync ─
+// Sinkronisasi data kehadiran dari CSV atau Ekstensi oleh Admin/Mentor
+const handleSyncSessionAttendance = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params as Record<string, string>
+    const { participants, conferenceId, actualDurationMinutes } = req.body
+
+    if (!Array.isArray(participants) || participants.length === 0) {
+      throw createError(400, 'Daftar peserta tidak boleh kosong')
+    }
+
+    const result = await processGoogleMeetAttendance(
+      sessionId,
+      conferenceId || 'ADMIN_CSV_SYNC',
+      participants,
+      typeof actualDurationMinutes === 'number' ? actualDurationMinutes : undefined
+    )
+
+    res.json({
+      success: true,
+      message: `Presensi berhasil diproses: ${result.summary.hadir} Hadir, ${result.summary.gagal} Tidak Hadir`,
+      data: result,
+    })
+  } catch (err) { next(err) }
+}
+
+adminRouter.post('/bootcamps/sessions/:sessionId/attendance/sync', handleSyncSessionAttendance)
+adminRouter.post('/bootcamps/:bootcampId/sessions/:sessionId/attendance/sync', handleSyncSessionAttendance)
 
 
 

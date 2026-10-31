@@ -103,7 +103,8 @@ export async function syncBootcampSessionProgressAndCertificate(
 export async function processGoogleMeetAttendance(
   sessionId: string,
   googleMeetId: string,
-  participants: GoogleMeetParticipant[]
+  participants: GoogleMeetParticipant[],
+  actualMeetDurationMinutes?: number
 ) {
   // 1. Ambil data sesi untuk tahu durasi total dan bootcamp-nya
   const session = await prisma.bootcampSession.findUnique({
@@ -119,9 +120,18 @@ export async function processGoogleMeetAttendance(
     throw new Error(`Session ${sessionId} tidak ditemukan`)
   }
 
-  const sessionDurationMinutes = session.videoDuration
+  const scheduledMinutes = session.videoDuration
     ? Math.ceil(session.videoDuration / 60)
     : 90 // default 90 menit jika tidak dikonfigurasi
+
+  // Aturan 80% dinamis:
+  // Jika durasi aktual Meet lebih singkat dari jadwal (misal live selesai dlm 60m dari jadwal 90m),
+  // maka 80% dihitung dari durasi aktual agar adil.
+  // Jika durasi aktual melebihi jadwal (overtime >90m, misal 100m karena Q&A panjang),
+  // maka 80% tetap dihitung dari durasi jadwal (90m) agar mentee tidak dirugikan sesi tambahan.
+  const sessionDurationMinutes = actualMeetDurationMinutes && actualMeetDurationMinutes > 0
+    ? Math.min(scheduledMinutes, actualMeetDurationMinutes)
+    : scheduledMinutes
 
   const minDurationMinutes = Math.ceil(sessionDurationMinutes * ATTENDANCE_THRESHOLD_PCT)
   const bootcampId = session.chapter.bootcampId
@@ -256,6 +266,9 @@ export async function processGoogleMeetAttendance(
   return {
     sessionId,
     googleMeetId,
+    scheduledDurationMinutes: scheduledMinutes,
+    effectiveDurationMinutes: sessionDurationMinutes,
+    actualDurationMinutes: actualMeetDurationMinutes || null,
     sessionDurationMinutes,
     minDurationMinutes,
     thresholdPct: ATTENDANCE_THRESHOLD_PCT * 100,
