@@ -982,7 +982,9 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
       data: {
         title: data.name,
         description: data.description,
-        field: data.fields[0] || 'UI_UX', // DB only supports single field
+        field: data.field || (data.fields && data.fields[0]) || 'UI_UX',
+        level: data.level || 'BEGINNER',
+        quota: data.quota ? Number(data.quota) : 50,
         price: data.price,
         registrationStartDate: data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null,
         registrationDeadline: data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null,
@@ -1122,7 +1124,10 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     const updateData: any = {}
     if (data.name) updateData.title = data.name
     if (data.description !== undefined) updateData.description = data.description
-    if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
+    if (data.field) updateData.field = data.field
+    else if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
+    if (data.level) updateData.level = data.level
+    if (data.quota !== undefined) updateData.quota = Number(data.quota)
     if (data.price !== undefined) updateData.price = data.price
     if (data.purchaseOpenAt) updateData.registrationStartDate = new Date(data.purchaseOpenAt)
     if (data.purchaseCloseAt) updateData.registrationDeadline = new Date(data.purchaseCloseAt)
