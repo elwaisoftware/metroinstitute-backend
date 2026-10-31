@@ -1191,6 +1191,25 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
   } catch (err) { next(err) }
 })
 
+// ── DELETE /admin/bootcamps/:id ──────────────────────────────
+adminRouter.delete('/bootcamps/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as Record<string, string>
+    const bootcamp = await prisma.bootcamp.findUnique({ where: { id } })
+    if (!bootcamp) return res.status(404).json({ success: false, message: 'Bootcamp tidak ditemukan' })
+
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { bootcampId: id } }),
+      prisma.wishlistItem.deleteMany({ where: { bootcampId: id } }),
+      prisma.certificate.deleteMany({ where: { bootcampId: id } }),
+      prisma.transaction.updateMany({ where: { bootcampId: id }, data: { bootcampId: null } }),
+      prisma.bootcamp.delete({ where: { id } }),
+    ])
+
+    res.json({ success: true, message: 'Bootcamp berhasil dihapus' })
+  } catch (err) { next(err) }
+})
+
 // ── GET /admin/bootcamps/:id/schedules ───────────────────────
 adminRouter.get('/bootcamps/:id/schedules', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -1466,8 +1485,17 @@ adminRouter.patch('/courses/:id', async (req: AuthRequest, res: Response, next: 
 adminRouter.delete('/courses/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as Record<string, string>
-    await prisma.miniCourse.delete({ where: { id } })
-    res.json({ success: true, message: 'Mini course dihapus' })
+    const course = await prisma.miniCourse.findUnique({ where: { id } })
+    if (!course) return res.status(404).json({ success: false, message: 'Mini course tidak ditemukan' })
+
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { courseId: id } }),
+      prisma.wishlistItem.deleteMany({ where: { courseId: id } }),
+      prisma.certificate.deleteMany({ where: { courseId: id } }),
+      prisma.transaction.updateMany({ where: { courseId: id }, data: { courseId: null } }),
+      prisma.miniCourse.delete({ where: { id } }),
+    ])
+    res.json({ success: true, message: 'Mini course berhasil dihapus' })
   } catch (err) { next(err) }
 })
 
@@ -2285,7 +2313,15 @@ adminRouter.patch('/webinars/:id/end', async (req: AuthRequest, res: Response, n
 adminRouter.delete('/webinars/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as Record<string, string>
-    await prisma.webinar.delete({ where: { id } })
+    const webinar = await prisma.webinar.findUnique({ where: { id } })
+    if (!webinar) return res.status(404).json({ success: false, message: 'Webinar tidak ditemukan' })
+
+    await prisma.$transaction([
+      prisma.webinarRegistration.deleteMany({ where: { webinarId: id } }),
+      prisma.certificate.deleteMany({ where: { webinarId: id } }),
+      prisma.transaction.updateMany({ where: { webinarId: id }, data: { webinarId: null } }),
+      prisma.webinar.delete({ where: { id } }),
+    ])
     res.json({ success: true, message: 'Webinar berhasil dihapus' })
   } catch (err) { next(err) }
 })
