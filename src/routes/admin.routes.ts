@@ -972,8 +972,8 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
       isPublished = true
       batchStatus = 'COMING_SOON'
       const now = new Date()
-      const openAt = data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null
-      const closeAt = data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null
+      const openAt = data.purchaseOpenAt ? (data.purchaseOpenAt.includes('T') ? new Date(data.purchaseOpenAt) : new Date(`${data.purchaseOpenAt}T00:00:00+07:00`)) : null
+      const closeAt = data.purchaseCloseAt ? (data.purchaseCloseAt.includes('T') ? new Date(data.purchaseCloseAt) : new Date(`${data.purchaseCloseAt}T23:59:59.999+07:00`)) : null
       if (openAt && now >= openAt) batchStatus = 'OPEN'
       if (closeAt && now >= closeAt) batchStatus = 'CLOSED'
     }
@@ -986,10 +986,10 @@ adminRouter.post('/bootcamps', async (req: AuthRequest, res: Response, next: Nex
         level: data.level || 'BEGINNER',
         quota: data.quota ? Number(data.quota) : 50,
         price: data.price,
-        registrationStartDate: data.purchaseOpenAt ? new Date(data.purchaseOpenAt) : null,
-        registrationDeadline: data.purchaseCloseAt ? new Date(data.purchaseCloseAt) : null,
-        batchStartDate: data.startDate ? new Date(data.startDate) : null,
-        batchEndDate: data.endDate ? new Date(data.endDate) : null,
+        registrationStartDate: data.purchaseOpenAt ? (data.purchaseOpenAt.includes('T') ? new Date(data.purchaseOpenAt) : new Date(`${data.purchaseOpenAt}T00:00:00+07:00`)) : null,
+        registrationDeadline: data.purchaseCloseAt ? (data.purchaseCloseAt.includes('T') ? new Date(data.purchaseCloseAt) : new Date(`${data.purchaseCloseAt}T23:59:59.999+07:00`)) : null,
+        batchStartDate: data.startDate ? (data.startDate.includes('T') ? new Date(data.startDate) : new Date(`${data.startDate}T00:00:00+07:00`)) : null,
+        batchEndDate: data.endDate ? (data.endDate.includes('T') ? new Date(data.endDate) : new Date(`${data.endDate}T23:59:59.999+07:00`)) : null,
         isPublished,
         batchStatus: batchStatus as any,
         certificateTemplateId: data.certificateTemplateId || null,
@@ -1129,10 +1129,10 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.level) updateData.level = data.level
     if (data.quota !== undefined) updateData.quota = Number(data.quota)
     if (data.price !== undefined) updateData.price = data.price
-    if (data.purchaseOpenAt) updateData.registrationStartDate = new Date(data.purchaseOpenAt)
-    if (data.purchaseCloseAt) updateData.registrationDeadline = new Date(data.purchaseCloseAt)
-    if (data.startDate) updateData.batchStartDate = new Date(data.startDate)
-    if (data.endDate) updateData.batchEndDate = new Date(data.endDate)
+    if (data.purchaseOpenAt) updateData.registrationStartDate = data.purchaseOpenAt.includes('T') ? new Date(data.purchaseOpenAt) : new Date(`${data.purchaseOpenAt}T00:00:00+07:00`)
+    if (data.purchaseCloseAt) updateData.registrationDeadline = data.purchaseCloseAt.includes('T') ? new Date(data.purchaseCloseAt) : new Date(`${data.purchaseCloseAt}T23:59:59.999+07:00`)
+    if (data.startDate) updateData.batchStartDate = data.startDate.includes('T') ? new Date(data.startDate) : new Date(`${data.startDate}T00:00:00+07:00`)
+    if (data.endDate) updateData.batchEndDate = data.endDate.includes('T') ? new Date(data.endDate) : new Date(`${data.endDate}T23:59:59.999+07:00`)
     if (isPublished !== undefined) updateData.isPublished = isPublished
     if (batchStatus !== undefined) updateData.batchStatus = batchStatus as any
     if (data.certificateTemplateId !== undefined) updateData.certificateTemplateId = data.certificateTemplateId || null
