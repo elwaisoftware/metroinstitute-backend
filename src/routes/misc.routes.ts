@@ -91,15 +91,20 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
     const now = new Date()
     const mappedFeaturedBootcamps = featuredBootcamps.map((b) => {
       let computedStatus = b.batchStatus
+      let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
+      if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
+        effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
+      }
+
       if (b.batchEndDate && now > b.batchEndDate) {
         computedStatus = 'CLOSED'
       } else if (b.batchStartDate && now >= b.batchStartDate) {
         computedStatus = 'ONGOING'
-      } else if (b.registrationDeadline && now >= b.registrationDeadline) {
+      } else if (effectiveDeadline && now >= effectiveDeadline) {
         computedStatus = 'CLOSED'
       } else if (b.registrationStartDate && now < b.registrationStartDate) {
         computedStatus = 'COMING_SOON'
-      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!b.registrationDeadline || now < b.registrationDeadline)) {
+      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
         computedStatus = 'OPEN'
       }
       return {
