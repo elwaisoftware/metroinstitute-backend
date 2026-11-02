@@ -79,8 +79,15 @@ webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
 export async function handleSuccessfulPayment(tx: {
   id: string; userId: string; productType: string
   courseId: string | null; bootcampId: string | null; title: string
+  voucherId?: string | null
 }) {
   try {
+    if (tx.voucherId) {
+      await prisma.voucher.update({
+        where: { id: tx.voucherId },
+        data: { usageCount: { increment: 1 } },
+      }).catch((err) => logger.warn('Failed to increment voucher usageCount', err))
+    }
     if (tx.productType === 'MINI_COURSE' && tx.courseId) {
       const course = await prisma.miniCourse.findUnique({
         where:  { id: tx.courseId },

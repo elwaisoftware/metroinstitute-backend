@@ -32,8 +32,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       bootcampId: z.string().optional(),
       webinarId: z.string().optional(),
       paymentMethod: z.enum(['ALL', 'CREDIT_CARD', 'BANK_TRANSFER', 'QRIS_EWALLET']).optional(),
+      voucherCode: z.string().optional(),
     })
-    const { productType, courseId, bootcampId, webinarId, paymentMethod } = schema.parse(req.body)
+    const { productType, courseId, bootcampId, webinarId, paymentMethod, voucherCode } = schema.parse(req.body)
 
     // Resolve product
     let title = '', price = 0, productId = ''
@@ -83,21 +84,114 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
 
     if (price <= 0) throw createError(400, 'Harga tidak valid')
 
+    // ── Voucher Validation & Calculation ──
+    let appliedVoucher: any = null
+    let discountAmount = 0
+    let finalAmount = price
+
+    if (voucherCode && voucherCode.trim()) {
+      const normalizedCode = voucherCode.trim().toUpperCase()
+      const voucher = await prisma.voucher.findFirst({
+        where: { code: { equals: normalizedCode, mode: 'insensitive' } },
+      })
+
+      if (!voucher) throw createError(404, 'Kode voucher tidak valid')
+      if (!voucher.isActive) throw createError(400, 'Voucher sudah tidak aktif')
+
+      const now = new Date()
+      if (now < voucher.validFrom) throw createError(400, 'Voucher belum dapat digunakan')
+
+      const validUntilEnd = new Date(voucher.validUntil)
+      validUntilEnd.setHours(23, 59, 59, 999)
+      if (now > validUntilEnd) throw createError(400, 'Voucher sudah kedaluwarsa')
+
+      if (voucher.usageCount >= voucher.maxUsage) {
+        throw createError(400, 'Kuota penggunaan voucher ini sudah habis')
+      }
+
+      const userUsage = await prisma.transaction.count({
+        where: { userId, voucherId: voucher.id, status: 'SUCCESS' },
+      })
+      if (userUsage >= voucher.maxPerUser) {
+        throw createError(400, `Kamu sudah mencapai batas penggunaan voucher ini (${voucher.maxPerUser}x)`)
+      }
+
+      appliedVoucher = voucher
+      if (voucher.type === 'PERCENT') {
+        discountAmount = Math.round((price * voucher.value) / 100)
+      } else {
+        discountAmount = voucher.value
+      }
+      discountAmount = Math.min(price, discountAmount)
+      finalAmount = Math.max(0, price - discountAmount)
+    }
+
     const orderId = `METRO-${Date.now()}-${userId.slice(0, 6).toUpperCase()}`
 
-    // Create pending transaction
+    // ── CASE 1: 100% DISCOUNT (FREE WITH VOUCHER) ──
+    if (finalAmount === 0 && appliedVoucher) {
+      const transaction = await prisma.transaction.create({
+        data: {
+          orderId,
+          userId,
+          productType,
+          courseId,
+          bootcampId,
+          webinarId,
+          amount: 0,
+          discountAmount,
+          voucherId: appliedVoucher.id,
+          status: 'SUCCESS',
+          paidAt: new Date(),
+          title,
+        },
+      })
+
+      // Increment voucher usage
+      await prisma.voucher.update({
+        where: { id: appliedVoucher.id },
+        data: { usageCount: { increment: 1 } },
+      }).catch((e) => logger.warn('Failed to increment voucher usage', e))
+
+      // Direct enrollment
+      await handleSuccessfulPayment(transaction)
+
+      return res.json({
+        success: true,
+        data: {
+          isFree: true,
+          orderId,
+          amount: 0,
+          discountAmount,
+          originalPrice: price,
+          status: 'SUCCESS',
+          message: 'Pendaftaran berhasil menggunakan voucher!',
+        },
+      })
+    }
+
+    // ── CASE 2: PAID TRANSACTION (VIA MIDTRANS) ──
     const transaction = await prisma.transaction.create({
       data: {
-        orderId, userId, productType, courseId, bootcampId, webinarId,
-        amount: price, status: 'PENDING', title,
+        orderId,
+        userId,
+        productType,
+        courseId,
+        bootcampId,
+        webinarId,
+        amount: finalAmount,
+        discountAmount,
+        voucherId: appliedVoucher ? appliedVoucher.id : null,
+        status: 'PENDING',
+        title,
       },
     })
 
-    // Create Midtrans Snap token
+    // Create Midtrans Snap token with final amount
     const snapPayload: Record<string, unknown> = {
-      transaction_details: { order_id: orderId, gross_amount: price },
+      transaction_details: { order_id: orderId, gross_amount: finalAmount },
       customer_details: { first_name: user.name, email: user.email },
-      item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
+      item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price: finalAmount }],
       callbacks: {
         finish: `${process.env.FRONTEND_URL}/checkout/success?order_id=${orderId}`,
         error: `${process.env.FRONTEND_URL}/checkout/failed?order_id=${orderId}`,
@@ -114,9 +208,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       try {
         const chargeRes = await coreApi.charge({
           payment_type: 'bank_transfer',
-          transaction_details: { order_id: orderId, gross_amount: price },
+          transaction_details: { order_id: orderId, gross_amount: finalAmount },
           customer_details: { first_name: user.name, email: user.email },
-          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
+          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price: finalAmount }],
           bank_transfer: { bank: 'bca' },
         } as any)
         if (chargeRes.va_numbers && chargeRes.va_numbers.length > 0) {
@@ -131,9 +225,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       try {
         const chargeRes = await coreApi.charge({
           payment_type: 'qris',
-          transaction_details: { order_id: orderId, gross_amount: price },
+          transaction_details: { order_id: orderId, gross_amount: finalAmount },
           customer_details: { first_name: user.name, email: user.email },
-          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price }],
+          item_details: [{ id: productId, name: title.slice(0, 50), quantity: 1, price: finalAmount }],
           qris: { acquirer: 'gopay' },
         } as any)
         qrString = chargeRes.qr_string || ''
@@ -154,10 +248,13 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
     res.json({
       success: true,
       data: {
+        isFree: false,
         orderId,
         snapToken: snapResponse.token,
         redirectUrl: snapResponse.redirect_url,
-        amount: price,
+        amount: finalAmount,
+        discountAmount,
+        originalPrice: price,
         paymentMethod: paymentMethod || 'ALL',
         vaNumber,
         bank: bankName,
@@ -286,4 +383,3 @@ transactionRouter.post('/:orderId/simulate', async (req: AuthRequest, res: Respo
     res.json({ success: true, status: 'SUCCESS', message: 'Pembayaran berhasil disimulasikan lunas' })
   } catch (err) { next(err) }
 })
-
