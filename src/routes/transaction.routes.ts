@@ -62,8 +62,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
       if (!webinar.isPublished) throw createError(400, 'Webinar belum dipublikasikan')
       if (webinar.isEnded) throw createError(400, 'Webinar telah selesai')
       const scheduledTime = new Date(webinar.scheduledAt).getTime()
-      if (Date.now() >= scheduledTime) {
-        throw createError(400, 'Pendaftaran ditutup karena sesi telah dimulai atau berakhir')
+      const registrationDeadline = scheduledTime - 2 * 60 * 60 * 1000 // H-2 jam
+      if (Date.now() >= registrationDeadline) {
+        throw createError(400, 'Pendaftaran ditutup karena telah mencapai batas waktu H-2 jam sebelum acara')
       }
       if (webinar.quota && webinar._count.registrations >= webinar.quota) {
         throw createError(400, 'Kuota peserta webinar sudah penuh')
