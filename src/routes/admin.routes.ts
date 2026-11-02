@@ -1642,6 +1642,24 @@ adminRouter.delete('/courses/sessions/:id', async (req: AuthRequest, res: Respon
   } catch (err) { next(err) }
 })
 
+// ── PUT /admin/courses/:id/sessions/reorder ────────────────
+adminRouter.put('/courses/:id/sessions/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { sessions } = req.body
+    // sessions: { id: string, order: number }[]
+    
+    await prisma.$transaction(
+      sessions.map((s: any) =>
+        prisma.courseSession.update({
+          where: { id: s.id },
+          data: { orderIndex: s.order }
+        })
+      )
+    )
+    res.json({ success: true, message: 'Urutan sesi berhasil diperbarui' })
+  } catch (err) { next(err) }
+})
+
 // ── PATCH /admin/courses/:id/featured ─────────────────────
 // Toggle isFeatured flag — tampil / hilang dari carousel landing page
 adminRouter.patch('/courses/:id/featured', async (req: AuthRequest, res: Response, next: NextFunction) => {
