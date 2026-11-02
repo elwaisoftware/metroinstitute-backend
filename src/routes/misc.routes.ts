@@ -99,13 +99,17 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
       if (b.batchEndDate && now > b.batchEndDate) {
         computedStatus = 'CLOSED'
       } else if (b.batchStartDate && now >= b.batchStartDate) {
-        computedStatus = 'ONGOING'
+        computedStatus = 'CLOSED'
       } else if (effectiveDeadline && now >= effectiveDeadline) {
         computedStatus = 'CLOSED'
       } else if (b.registrationStartDate && now < b.registrationStartDate) {
-        computedStatus = 'COMING_SOON'
+        computedStatus = 'CLOSED'
       } else if (b.registrationStartDate && now >= b.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
         computedStatus = 'OPEN'
+      } else if (b.batchStatus === 'OPEN') {
+        computedStatus = 'OPEN'
+      } else {
+        computedStatus = 'CLOSED'
       }
       return {
         ...b,

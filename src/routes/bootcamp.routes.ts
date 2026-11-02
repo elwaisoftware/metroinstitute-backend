@@ -15,7 +15,13 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
     const where: Record<string, unknown> = { isPublished: true, chapters: { some: { sessions: { some: {} } } } }
     if (field) where.field = field
     if (level) where.level = level
-    if (status) where.batchStatus = status
+    if (status) {
+      if (status === 'CLOSED') {
+        where.batchStatus = { in: ['CLOSED', 'ONGOING', 'COMING_SOON'] }
+      } else {
+        where.batchStatus = status
+      }
+    }
     if (search) where.title = { contains: search as string, mode: 'insensitive' }
 
     const bootcamps = await prisma.bootcamp.findMany({
@@ -42,13 +48,17 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
       if (b.batchEndDate && now > b.batchEndDate) {
         computedStatus = 'CLOSED'
       } else if (b.batchStartDate && now >= b.batchStartDate) {
-        computedStatus = 'ONGOING'
+        computedStatus = 'CLOSED'
       } else if (effectiveDeadline && now >= effectiveDeadline) {
         computedStatus = 'CLOSED'
       } else if (b.registrationStartDate && now < b.registrationStartDate) {
-        computedStatus = 'COMING_SOON'
+        computedStatus = 'CLOSED'
       } else if (b.registrationStartDate && now >= b.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
         computedStatus = 'OPEN'
+      } else if (b.batchStatus === 'OPEN') {
+        computedStatus = 'OPEN'
+      } else {
+        computedStatus = 'CLOSED'
       }
       return { ...b, batchStatus: computedStatus }
     })
@@ -140,13 +150,17 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
     if (bootcamp.batchEndDate && now > bootcamp.batchEndDate) {
       computedBatchStatus = 'CLOSED'
     } else if (bootcamp.batchStartDate && now >= bootcamp.batchStartDate) {
-      computedBatchStatus = 'ONGOING'
+      computedBatchStatus = 'CLOSED'
     } else if (effectiveDeadline && now >= effectiveDeadline) {
       computedBatchStatus = 'CLOSED'
     } else if (bootcamp.registrationStartDate && now < bootcamp.registrationStartDate) {
-      computedBatchStatus = 'COMING_SOON'
+      computedBatchStatus = 'CLOSED'
     } else if (bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
       computedBatchStatus = 'OPEN'
+    } else if (bootcamp.batchStatus === 'OPEN') {
+      computedBatchStatus = 'OPEN'
+    } else {
+      computedBatchStatus = 'CLOSED'
     }
 
     // Normalize reviews to use consistent field name
