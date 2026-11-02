@@ -4,7 +4,6 @@ import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { grantXp } from '../utils/xp'
-import { updateBadge } from '../utils/badge'
 
 export const skillTestRouter = Router()
 skillTestRouter.use(authenticate)
@@ -125,7 +124,6 @@ skillTestRouter.post('/submit', async (req: AuthRequest, res: Response, next: Ne
       },
     })
 
-    await updateBadge(userId)
 
     // Save detail answers for analytics - Model not created yet in Prisma schema
     // await prisma.skillTestSubmission.createMany({
