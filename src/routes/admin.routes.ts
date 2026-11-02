@@ -1133,6 +1133,9 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.endDate) updateData.batchEndDate = data.endDate.includes('T') ? new Date(data.endDate) : new Date(`${data.endDate}T23:59:59.999+07:00`)
     if (isPublished !== undefined) updateData.isPublished = isPublished
     if (batchStatus !== undefined) updateData.batchStatus = batchStatus as any
+    if (updateData.registrationDeadline && new Date(updateData.registrationDeadline).getTime() > Date.now()) {
+      updateData.batchStatus = 'OPEN'
+    }
     if (data.certificateTemplateId !== undefined) updateData.certificateTemplateId = data.certificateTemplateId || null
     if (data.thumbnailUrl !== undefined) updateData.thumbnailUrl = data.thumbnailUrl || null
 

@@ -24,27 +24,31 @@ export function computeBootcampStatus(b: any, now = new Date()): 'OPEN' | 'CLOSE
     return 'CLOSED'
   }
 
-  // 3. Ditutup jika admin secara eksplisit mengatur status CLOSED
-  if (b.batchStatus === 'CLOSED') {
-    return 'CLOSED'
-  }
-
-  // 4. Ditutup jika batch sudah mulai dan tidak ada perpanjangan batas pendaftaran
-  if (b.batchStartDate && now >= new Date(b.batchStartDate) && (!effectiveDeadline || effectiveDeadline <= new Date(b.batchStartDate))) {
-    return 'CLOSED'
-  }
-
-  // 5. Ditutup jika tanggal mulai pendaftaran masih di masa depan (belum dibuka)
+  // 3. Ditutup jika tanggal mulai pendaftaran masih di masa depan (belum dibuka)
   if (b.registrationStartDate && now < new Date(b.registrationStartDate) && b.batchStatus !== 'OPEN') {
     return 'CLOSED'
   }
 
-  // 6. Terbuka jika admin mengatur OPEN, atau jika dalam periode pendaftaran aktif
+  // 4. TERBUKA jika batas pendaftaran masih aktif di masa depan!
+  if (effectiveDeadline && now < effectiveDeadline) {
+    return 'OPEN'
+  }
+
+  // 5. Ditutup jika batch sudah mulai dan tidak ada perpanjangan batas pendaftaran
+  if (b.batchStartDate && now >= new Date(b.batchStartDate)) {
+    return 'CLOSED'
+  }
+
+  // 6. Ditutup jika admin secara manual mengatur status CLOSED
+  if (b.batchStatus === 'CLOSED') {
+    return 'CLOSED'
+  }
+
+  // 7. Terbuka jika admin mengatur OPEN, atau jika dalam periode pendaftaran aktif
   if (b.batchStatus === 'OPEN') {
     return 'OPEN'
   }
   if (b.isPublished) {
-    if (effectiveDeadline && now < effectiveDeadline) return 'OPEN'
     if (!effectiveDeadline && (!b.batchStartDate || now < new Date(b.batchStartDate))) return 'OPEN'
   }
 
