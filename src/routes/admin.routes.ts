@@ -1125,7 +1125,7 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.field) updateData.field = data.field
     else if (data.fields && data.fields.length > 0) updateData.field = data.fields[0]
     if (data.level) updateData.level = data.level
-    if (data.quota !== undefined) updateData.quota = Number(data.quota)
+    if (data.quota !== undefined) updateData.quota = (data.quota && Number(data.quota) > 0) ? Number(data.quota) : 50
     if (data.price !== undefined) updateData.price = data.price
     if (data.purchaseOpenAt) updateData.registrationStartDate = data.purchaseOpenAt.includes('T') ? new Date(data.purchaseOpenAt) : new Date(`${data.purchaseOpenAt}T00:00:00+07:00`)
     if (data.purchaseCloseAt) updateData.registrationDeadline = data.purchaseCloseAt.includes('T') ? new Date(data.purchaseCloseAt) : new Date(`${data.purchaseCloseAt}T23:59:59.999+07:00`)
@@ -1174,7 +1174,24 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
       mappedStatus = 'DRAFT'
     }
 
-    res.json({ success: true, data: { ...bootcamp, status: mappedStatus, batchStatus: computedBatchStatus, totalChapters, totalSessions, hasCurriculum } })
+    res.json({
+      success: true,
+      data: {
+        ...bootcamp,
+        name: bootcamp.title,
+        quota: bootcamp.quota ?? 50,
+        purchaseOpenAt: bootcamp.registrationStartDate,
+        purchaseCloseAt: bootcamp.registrationDeadline,
+        startDate: bootcamp.batchStartDate,
+        endDate: bootcamp.batchEndDate,
+        fields: bootcamp.field ? [bootcamp.field] : [],
+        status: mappedStatus,
+        batchStatus: computedBatchStatus,
+        totalChapters,
+        totalSessions,
+        hasCurriculum
+      }
+    })
   } catch (err) { next(err) }
 })
 
@@ -2334,6 +2351,7 @@ adminRouter.post('/webinars', async (req: AuthRequest, res: Response, next: Next
     const webinar = await prisma.webinar.create({
       data: {
         ...body,
+        quota: (body.quota && body.quota > 0) ? body.quota : null,
         scheduledAt: parseWebinarScheduledDate(body.scheduledAt),
       },
     })
@@ -2388,6 +2406,9 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
 
     const body = updateSchema.parse(req.body)
     const updateData: any = { ...body }
+    if (body.quota !== undefined) {
+      updateData.quota = (body.quota && body.quota > 0) ? Number(body.quota) : null
+    }
     if (body.scheduledAt) {
       updateData.scheduledAt = parseWebinarScheduledDate(body.scheduledAt)
       if (body.isEnded === undefined && updateData.scheduledAt.getTime() > Date.now()) {
