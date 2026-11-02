@@ -1269,11 +1269,19 @@ adminRouter.get('/bootcamps/:id/chapters', async (req: AuthRequest, res: Respons
       }
     })
     
-    // Map orderIndex -> order for frontend compatibility
+    // Map orderIndex -> order and aliases for frontend compatibility
     const mappedChapters = chapters.map((ch: any) => ({
       ...ch,
       order: ch.orderIndex,
-      sessions: ch.sessions.map((s: any) => ({ ...s, order: s.orderIndex }))
+      sessions: ch.sessions.map((s: any) => ({
+        ...s,
+        order: s.orderIndex,
+        scheduledAt: s.liveScheduledAt,
+        meetingUrl: s.liveUrl,
+        durationMin: s.videoDuration,
+        isPreview: s.isFreePreview,
+        materialUrl: Array.isArray(s.materials) && s.materials[0]?.url ? s.materials[0].url : (typeof s.materials === 'string' ? s.materials : '')
+      }))
     }))
     
     res.json({ success: true, data: mappedChapters })
@@ -1326,22 +1334,27 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
       parsedDeadline = new Date(assignmentDeadline)
     }
 
-    let finalLiveUrl = meetingUrl || liveUrl;
+    const rawScheduledAt = scheduledAt ?? req.body.liveScheduledAt;
+    const finalScheduledAt = rawScheduledAt ? new Date(rawScheduledAt) : null;
+    const finalDuration = durationMin !== undefined ? Number(durationMin) : (req.body.videoDuration !== undefined ? Number(req.body.videoDuration) : 90);
+    const finalIsPreview = isPreview !== undefined ? Boolean(isPreview) : Boolean(req.body.isFreePreview);
+    const finalLiveUrl = meetingUrl || liveUrl;
+    const rawMatUrl = materialUrl ?? (Array.isArray(req.body.materials) && req.body.materials[0]?.url ? req.body.materials[0].url : '');
+    const finalMaterials = rawMatUrl ? [{ name: 'Dokumen', url: rawMatUrl }] : (Array.isArray(req.body.materials) ? req.body.materials : undefined);
 
     const session = await prisma.bootcampSession.create({
       data: {
         chapterId,
         title,
-          description,
+        description,
         type,
-        isFreePreview: isPreview || false,
-        videoUrl,
-        liveUrl: finalLiveUrl,
-        liveScheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-        videoDuration: durationMin,
+        isFreePreview: finalIsPreview,
+        videoUrl: videoUrl || null,
+        liveUrl: finalLiveUrl || null,
+        liveScheduledAt: finalScheduledAt,
+        videoDuration: finalDuration,
         attendanceWindowMin,
-        // Since schema uses Json for materials, let's store materialUrl there if needed,
-        materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
+        materials: finalMaterials,
         assignmentDescription,
         assignmentDeadline: parsedDeadline,
         orderIndex: count,
@@ -1555,7 +1568,12 @@ adminRouter.get('/courses/:id/sessions', async (req: AuthRequest, res: Response,
     if (!course) return res.status(404).json({ success: false, message: 'Course tidak ditemukan' })
     
     // Flatten sessions from all chapters (usually Mini Course only has 1 chapter)
-    const sessions = course.chapters.flatMap(ch => ch.sessions)
+    const sessions = course.chapters.flatMap(ch => ch.sessions).map((s: any) => ({
+      ...s,
+      order: s.orderIndex,
+      materialUrl: Array.isArray(s.materials) && s.materials[0]?.url ? s.materials[0].url : (typeof s.materials === 'string' ? s.materials : ''),
+      isPreview: s.isFreePreview
+    }))
     res.json({ success: true, data: sessions })
   } catch (err) { next(err) }
 })
@@ -1615,21 +1633,35 @@ adminRouter.put('/courses/sessions/:id', async (req: AuthRequest, res: Response,
     const { id } = req.params as Record<string, string>
     const data = req.body
     
+    let parsedMaterials = undefined;
+    if (data.materialUrl !== undefined) {
+      parsedMaterials = data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [];
+    } else if (data.materials !== undefined) {
+      parsedMaterials = data.materials;
+    }
+
     const session = await prisma.courseSession.update({
       where: { id },
       data: {
-        title: data.title,
-        type: data.type,
-        videoUrl: data.videoUrl || null,
-        materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
-        isFreePreview: data.isPreview || false,
+        title: data.title !== undefined ? data.title : undefined,
+        description: data.description !== undefined ? data.description : undefined,
+        type: data.type !== undefined ? data.type : undefined,
+        videoUrl: data.videoUrl !== undefined ? (data.videoUrl || null) : undefined,
+        materials: parsedMaterials,
+        isFreePreview: data.isPreview !== undefined ? Boolean(data.isPreview) : (data.isFreePreview !== undefined ? Boolean(data.isFreePreview) : undefined),
         xpReward: data.xpReward !== undefined ? Number(data.xpReward) : undefined,
         quizOptions: data.quizOptions !== undefined ? data.quizOptions : undefined,
         assignmentDescription: data.assignmentDescription !== undefined ? data.assignmentDescription : undefined
       }
     })
     
-    res.json({ success: true, data: session })
+    const mappedSession = {
+      ...session,
+      order: session.orderIndex,
+      materialUrl: Array.isArray(session.materials) && (session.materials as any)[0]?.url ? (session.materials as any)[0].url : '',
+      isPreview: session.isFreePreview
+    };
+    res.json({ success: true, data: mappedSession })
   } catch (err) { next(err) }
 })
 
@@ -1948,7 +1980,17 @@ adminRouter.get('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
       }
     });
     if (!session) return next(createError(404, 'Sesi tidak ditemukan'));
-    res.json({ success: true, data: session });
+
+    const mappedSession = {
+      ...session,
+      order: session.orderIndex,
+      scheduledAt: session.liveScheduledAt,
+      meetingUrl: session.liveUrl,
+      durationMin: session.videoDuration,
+      isPreview: session.isFreePreview,
+      materialUrl: Array.isArray(session.materials) && (session.materials as any)[0]?.url ? (session.materials as any)[0].url : ''
+    };
+    res.json({ success: true, data: mappedSession });
   } catch (err) { next(err) }
 });
 
@@ -1956,13 +1998,45 @@ adminRouter.get('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
 adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id: bootcampId, sessionId } = req.params as Record<string, string>;
-    const { title, description, type, isPreview, videoUrl, liveUrl, materialUrl, assignmentDescription, assignmentDeadline, scheduledAt, durationMin, attendanceWindowMin, meetingUrl, recordingUrl } = req.body;
+    const { 
+      title, 
+      description, 
+      type, 
+      isPreview, 
+      isFreePreview, 
+      videoUrl, 
+      liveUrl, 
+      materialUrl, 
+      materials, 
+      assignmentDescription, 
+      assignmentDeadline, 
+      scheduledAt, 
+      liveScheduledAt, 
+      durationMin, 
+      videoDuration, 
+      attendanceWindowMin, 
+      meetingUrl, 
+      recordingUrl 
+    } = req.body;
 
-    let parsedDeadline = assignmentDeadline === '' ? null : (assignmentDeadline ? new Date(assignmentDeadline) : undefined);
+    let parsedDeadline = assignmentDeadline !== undefined ? ((assignmentDeadline === '' || assignmentDeadline === null) ? null : new Date(assignmentDeadline)) : undefined;
     
-    let parsedScheduledAt = scheduledAt === '' ? null : (scheduledAt ? new Date(scheduledAt) : undefined);
+    const rawScheduledAt = scheduledAt !== undefined ? scheduledAt : liveScheduledAt;
+    let parsedScheduledAt = rawScheduledAt !== undefined ? ((rawScheduledAt === '' || rawScheduledAt === null) ? null : new Date(rawScheduledAt)) : undefined;
 
-    let finalLiveUrl = liveUrl || meetingUrl;
+    let finalLiveUrl = liveUrl !== undefined ? liveUrl : meetingUrl;
+
+    const rawDuration = durationMin !== undefined ? durationMin : videoDuration;
+    const parsedDuration = rawDuration !== undefined ? ((rawDuration === '' || rawDuration === null) ? null : Number(rawDuration)) : undefined;
+
+    const rawPreview = isPreview !== undefined ? isPreview : isFreePreview;
+
+    let parsedMaterials = undefined;
+    if (materialUrl !== undefined) {
+      parsedMaterials = materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : [];
+    } else if (materials !== undefined) {
+      parsedMaterials = materials;
+    }
 
     const updated = await prisma.bootcampSession.update({
       where: { id: sessionId },
@@ -1970,20 +2044,30 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
         title: title !== undefined ? title : undefined, 
         description: description !== undefined ? description : undefined,
         type: type !== undefined ? type : undefined, 
-        isFreePreview: isPreview !== undefined ? isPreview : undefined,
+        isFreePreview: rawPreview !== undefined ? Boolean(rawPreview) : undefined,
         videoUrl: recordingUrl !== undefined ? recordingUrl : (videoUrl !== undefined ? videoUrl : undefined), 
         liveUrl: finalLiveUrl !== undefined ? finalLiveUrl : undefined,
-        materials: materialUrl ? [{ name: 'Dokumen', url: materialUrl }] : undefined,
+        materials: parsedMaterials !== undefined ? parsedMaterials : undefined,
         assignmentDescription: assignmentDescription !== undefined ? assignmentDescription : undefined, 
-        assignmentDeadline: assignmentDeadline !== undefined ? parsedDeadline : undefined,
-        liveScheduledAt: scheduledAt !== undefined ? parsedScheduledAt : undefined,
-        videoDuration: durationMin !== undefined ? durationMin : undefined,
+        assignmentDeadline: parsedDeadline !== undefined ? parsedDeadline : undefined,
+        liveScheduledAt: parsedScheduledAt !== undefined ? parsedScheduledAt : undefined,
+        videoDuration: parsedDuration !== undefined ? parsedDuration : undefined,
         attendanceWindowMin: attendanceWindowMin !== undefined ? attendanceWindowMin : undefined,
         xpReward: req.body.xpReward !== undefined ? Number(req.body.xpReward) : undefined,
         quizOptions: req.body.quizOptions !== undefined ? req.body.quizOptions : undefined
       }
     });
-    res.json({ success: true, data: updated });
+
+    const mappedUpdated = {
+      ...updated,
+      order: updated.orderIndex,
+      scheduledAt: updated.liveScheduledAt,
+      meetingUrl: updated.liveUrl,
+      durationMin: updated.videoDuration,
+      isPreview: updated.isFreePreview,
+      materialUrl: Array.isArray(updated.materials) && (updated.materials as any)[0]?.url ? (updated.materials as any)[0].url : ''
+    };
+    res.json({ success: true, data: mappedUpdated });
   } catch (err) { next(err) }
 });
 
