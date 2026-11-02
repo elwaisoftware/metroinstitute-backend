@@ -766,6 +766,31 @@ adminRouter.patch('/skill-test/questions/reorder', async (req: AuthRequest, res:
   } catch (err) { next(err) }
 })
 
+// ── POST /admin/skill-test/shuffle-options ───────────────────
+adminRouter.post('/skill-test/shuffle-options', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const questions = await prisma.skillTestQuestion.findMany({ orderBy: { orderIndex: 'asc' } })
+    const optionLetters = ['a', 'b', 'c', 'd']
+
+    await prisma.$transaction(
+      questions.map((q) => {
+        const rawOptions = (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) as any[]
+        const shuffled = [...rawOptions].sort(() => Math.random() - 0.5)
+        const newOptions = shuffled.map((opt, idx) => ({
+          ...opt,
+          id: optionLetters[idx],
+        }))
+        return prisma.skillTestQuestion.update({
+          where: { id: q.id },
+          data: { options: newOptions },
+        })
+      })
+    )
+
+    res.json({ success: true, message: 'Semua opsi soal berhasil diacak' })
+  } catch (err) { next(err) }
+})
+
 // ── GET /admin/certificate-templates ────────────────────────
 adminRouter.get('/certificate-templates', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
