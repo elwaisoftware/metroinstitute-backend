@@ -496,6 +496,8 @@ export async function getSessionAttendanceDetails(sessionId: string) {
  * Auto-terbitkan sertifikat webinar jika mentee memenuhi syarat kehadiran.
  */
 export async function issueWebinarCertificate(userId: string, webinarId: string) {
+  // Inspire Talk tidak menerbitkan sertifikat
+  return null
   try {
     const existingCert = await prisma.certificate.findFirst({
       where: { userId, webinarId },
