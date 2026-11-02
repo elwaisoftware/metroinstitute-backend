@@ -50,7 +50,7 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
       if (w.isEnded) return 'COMPLETED'
       if (!w.isPublished) return 'DRAFT'
       const scheduledTime = new Date(w.scheduledAt).getTime()
-      const closeTime = scheduledTime - 2 * 60 * 60 * 1000
+      const closeTime = scheduledTime
       const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
       if (Date.now() >= closeTime || isFull) return 'CLOSED'
       return 'OPEN'
@@ -58,7 +58,7 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
 
     const items = webinars.map((w: any) => {
       const scheduledTime = new Date(w.scheduledAt).getTime()
-      const isRegistrationClosed = Boolean(w.isEnded || Date.now() >= (scheduledTime - 2 * 60 * 60 * 1000))
+      const isRegistrationClosed = Boolean(w.isEnded || Date.now() >= scheduledTime)
       return {
         ...w,
         status: computeWebinarStatus(w),
@@ -143,7 +143,7 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
       attendance = await getMenteeWebinarAttendance(id, userId)
     }
 
-    const registrationDeadlineMs = scheduledTime - 2 * 60 * 60 * 1000
+    const registrationDeadlineMs = scheduledTime
     const isRegistrationClosed = Boolean(isEnded || nowMs >= registrationDeadlineMs)
     const computeWebinarStatus = (w: any) => {
       if (isEnded) return 'COMPLETED'
@@ -200,9 +200,8 @@ webinarRouter.post('/:id/register', authenticate, async (req: AuthRequest, res: 
     if (webinar.isEnded) throw createError(400, 'Webinar telah selesai')
 
     const scheduledTime = new Date(webinar.scheduledAt).getTime()
-    const registrationDeadline = scheduledTime - 2 * 60 * 60 * 1000 // H-2 jam
-    if (Date.now() >= registrationDeadline) {
-      throw createError(400, 'Pendaftaran ditutup karena telah mencapai batas waktu H-2 jam sebelum acara')
+    if (Date.now() >= scheduledTime) {
+      throw createError(400, 'Pendaftaran ditutup karena sesi telah dimulai atau berakhir')
     }
 
     // Check quota

@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
 import { WhatsAppService } from '../services/whatsapp.service'
 import { getSessionAttendanceDetails, updateAttendanceStatus, getWebinarAttendanceDetails, overrideWebinarAttendance, processGoogleMeetAttendance } from '../services/attendance.service'
+import { computeBootcampStatus } from './bootcamp.routes'
 import multer from 'multer'
 import { v2 as cloudinary } from 'cloudinary'
 import path from 'path'
@@ -1045,13 +1046,10 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
       const totalSessions = item.chapters?.reduce((acc: number, ch: any) => acc + (ch._count?.sessions || 0), 0) || 0
       const hasCurriculum = totalChapters > 0 && totalSessions > 0
 
+      const computedBatchStatus = computeBootcampStatus(item, new Date())
       let mappedStatus = 'DRAFT'
       if (item.isPublished && hasCurriculum) {
-        if (item.batchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-        else if (item.batchStatus === 'OPEN') mappedStatus = 'OPEN'
-        else if (item.batchStatus === 'ONGOING') mappedStatus = 'ONGOING'
-        else if (item.batchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
-        else mappedStatus = item.batchStatus || 'PUBLISHED'
+        mappedStatus = computedBatchStatus
       } else {
         mappedStatus = 'DRAFT'
       }
@@ -1064,7 +1062,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         name: item.title,
         fields: item.field ? [item.field] : [],
         status: mappedStatus,
-        batchStatus: item.batchStatus,
+        batchStatus: computedBatchStatus,
         purchaseOpenAt: item.registrationStartDate,
         purchaseCloseAt: item.registrationDeadline,
         startDate: item.batchStartDate,
@@ -1114,7 +1112,7 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
         } else if (data.status === 'CLOSED') {
           batchStatus = 'CLOSED'
         } else if (data.status === 'PUBLISHED') {
-          batchStatus = 'COMING_SOON'
+          batchStatus = 'OPEN'
         } else {
           batchStatus = data.status
         }
@@ -1168,26 +1166,10 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
     const totalSessions = bootcamp.chapters?.reduce((acc: number, ch: any) => acc + (ch._count?.sessions || 0), 0) || 0
     const hasCurriculum = totalChapters > 0 && totalSessions > 0
 
+    const computedBatchStatus = computeBootcampStatus(bootcamp, new Date())
     let mappedStatus = 'DRAFT'
-    let computedBatchStatus = bootcamp.batchStatus
-    const now = new Date()
-    if (bootcamp.batchEndDate && now > bootcamp.batchEndDate) {
-      computedBatchStatus = 'CLOSED'
-    } else if (bootcamp.batchStartDate && now >= bootcamp.batchStartDate) {
-      computedBatchStatus = 'ONGOING'
-    } else if (bootcamp.registrationDeadline && now >= bootcamp.registrationDeadline) {
-      computedBatchStatus = 'CLOSED'
-    } else if (bootcamp.registrationStartDate && now < bootcamp.registrationStartDate) {
-      computedBatchStatus = 'COMING_SOON'
-    } else if (bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate && (!bootcamp.registrationDeadline || now < bootcamp.registrationDeadline)) {
-      computedBatchStatus = 'OPEN'
-    }
-
     if (bootcamp.isPublished && hasCurriculum) {
-      if (computedBatchStatus === 'CLOSED') mappedStatus = 'CLOSED'
-      else if (computedBatchStatus === 'OPEN') mappedStatus = 'OPEN'
-      else if (computedBatchStatus === 'ONGOING') mappedStatus = 'ONGOING'
-      else if (computedBatchStatus === 'COMING_SOON') mappedStatus = 'PUBLISHED'
+      mappedStatus = computedBatchStatus
     } else {
       mappedStatus = 'DRAFT'
     }
@@ -2408,6 +2390,10 @@ adminRouter.patch('/webinars/:id', async (req: AuthRequest, res: Response, next:
     const updateData: any = { ...body }
     if (body.scheduledAt) {
       updateData.scheduledAt = parseWebinarScheduledDate(body.scheduledAt)
+      if (body.isEnded === undefined && updateData.scheduledAt.getTime() > Date.now()) {
+        updateData.isEnded = false
+        updateData.endedAt = null
+      }
     }
     if (body.isEnded !== undefined) {
       if (body.isEnded) {

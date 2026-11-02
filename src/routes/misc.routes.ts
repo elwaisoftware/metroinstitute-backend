@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { optionalAuth, AuthRequest } from '../middleware/auth.middleware'
 import { WhatsAppService } from '../services/whatsapp.service'
+import { computeBootcampStatus } from './bootcamp.routes'
 
 export const searchRouter = Router()
 export const homepageRouter = Router()
@@ -89,33 +90,10 @@ homepageRouter.get('/', async (_req: Request, res: Response, next: NextFunction)
     const config = Object.fromEntries(configRows.map((r) => [r.key, r.value]))
 
     const now = new Date()
-    const mappedFeaturedBootcamps = featuredBootcamps.map((b) => {
-      let computedStatus = b.batchStatus
-      let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
-      if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
-        effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
-      }
-
-      if (b.batchEndDate && now > b.batchEndDate) {
-        computedStatus = 'CLOSED'
-      } else if (b.batchStartDate && now >= b.batchStartDate) {
-        computedStatus = 'CLOSED'
-      } else if (effectiveDeadline && now >= effectiveDeadline) {
-        computedStatus = 'CLOSED'
-      } else if (b.registrationStartDate && now < b.registrationStartDate) {
-        computedStatus = 'CLOSED'
-      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
-        computedStatus = 'OPEN'
-      } else if (b.batchStatus === 'OPEN') {
-        computedStatus = 'OPEN'
-      } else {
-        computedStatus = 'CLOSED'
-      }
-      return {
-        ...b,
-        batchStatus: computedStatus,
-      }
-    })
+    const mappedFeaturedBootcamps = featuredBootcamps.map((b) => ({
+      ...b,
+      batchStatus: computeBootcampStatus(b, now),
+    }))
 
     res.json({
       success: true,

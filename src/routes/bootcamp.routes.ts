@@ -8,6 +8,49 @@ import { updateBadge } from '../utils/badge'
 
 export const bootcampRouter = Router()
 
+export function computeBootcampStatus(b: any, now = new Date()): 'OPEN' | 'CLOSED' {
+  let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
+  if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
+    effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
+  }
+
+  // 1. Selesai total jika tanggal akhir batch telah lewat
+  if (b.batchEndDate && now > new Date(b.batchEndDate)) {
+    return 'CLOSED'
+  }
+
+  // 2. Ditutup jika batas akhir pendaftaran telah lewat
+  if (effectiveDeadline && now >= effectiveDeadline) {
+    return 'CLOSED'
+  }
+
+  // 3. Ditutup jika admin secara eksplisit mengatur status CLOSED
+  if (b.batchStatus === 'CLOSED') {
+    return 'CLOSED'
+  }
+
+  // 4. Ditutup jika batch sudah mulai dan tidak ada perpanjangan batas pendaftaran
+  if (b.batchStartDate && now >= new Date(b.batchStartDate) && (!effectiveDeadline || effectiveDeadline <= new Date(b.batchStartDate))) {
+    return 'CLOSED'
+  }
+
+  // 5. Ditutup jika tanggal mulai pendaftaran masih di masa depan (belum dibuka)
+  if (b.registrationStartDate && now < new Date(b.registrationStartDate) && b.batchStatus !== 'OPEN') {
+    return 'CLOSED'
+  }
+
+  // 6. Terbuka jika admin mengatur OPEN, atau jika dalam periode pendaftaran aktif
+  if (b.batchStatus === 'OPEN') {
+    return 'OPEN'
+  }
+  if (b.isPublished) {
+    if (effectiveDeadline && now < effectiveDeadline) return 'OPEN'
+    if (!effectiveDeadline && (!b.batchStartDate || now < new Date(b.batchStartDate))) return 'OPEN'
+  }
+
+  return 'CLOSED'
+}
+
 // ── GET /bootcamps ─────────────────────────────────────────
 bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -38,30 +81,10 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
     })
     
     const now = new Date()
-    const mappedBootcamps = bootcamps.map(b => {
-      let computedStatus = b.batchStatus
-      let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
-      if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
-        effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
-      }
-
-      if (b.batchEndDate && now > b.batchEndDate) {
-        computedStatus = 'CLOSED'
-      } else if (b.batchStartDate && now >= b.batchStartDate) {
-        computedStatus = 'CLOSED'
-      } else if (effectiveDeadline && now >= effectiveDeadline) {
-        computedStatus = 'CLOSED'
-      } else if (b.registrationStartDate && now < b.registrationStartDate) {
-        computedStatus = 'CLOSED'
-      } else if (b.registrationStartDate && now >= b.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
-        computedStatus = 'OPEN'
-      } else if (b.batchStatus === 'OPEN') {
-        computedStatus = 'OPEN'
-      } else {
-        computedStatus = 'CLOSED'
-      }
-      return { ...b, batchStatus: computedStatus }
-    })
+    const mappedBootcamps = bootcamps.map(b => ({
+      ...b,
+      batchStatus: computeBootcampStatus(b, now),
+    }))
     
     res.json({ success: true, data: mappedBootcamps })
   } catch (err) { next(err) }
@@ -140,28 +163,8 @@ bootcampRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response,
       progress = enrollment?.progress ?? 0
     }
 
-    let computedBatchStatus = bootcamp.batchStatus
-    let effectiveDeadline = bootcamp.registrationDeadline ? new Date(bootcamp.registrationDeadline) : null
-    if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
-      effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
-    }
-
     const now = new Date()
-    if (bootcamp.batchEndDate && now > bootcamp.batchEndDate) {
-      computedBatchStatus = 'CLOSED'
-    } else if (bootcamp.batchStartDate && now >= bootcamp.batchStartDate) {
-      computedBatchStatus = 'CLOSED'
-    } else if (effectiveDeadline && now >= effectiveDeadline) {
-      computedBatchStatus = 'CLOSED'
-    } else if (bootcamp.registrationStartDate && now < bootcamp.registrationStartDate) {
-      computedBatchStatus = 'CLOSED'
-    } else if (bootcamp.registrationStartDate && now >= bootcamp.registrationStartDate && (!effectiveDeadline || now < effectiveDeadline)) {
-      computedBatchStatus = 'OPEN'
-    } else if (bootcamp.batchStatus === 'OPEN') {
-      computedBatchStatus = 'OPEN'
-    } else {
-      computedBatchStatus = 'CLOSED'
-    }
+    const computedBatchStatus = computeBootcampStatus(bootcamp, now)
 
     // Normalize reviews to use consistent field name
     const normalized = {
