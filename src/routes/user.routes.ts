@@ -135,7 +135,7 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       }),
       prisma.courseEnrollment.findMany({
         where: { userId, isActive: true, accessUntil: { gt: new Date() } },
-        include: { course: true },
+        include: { course: { include: { chapters: { include: { sessions: true } } } } },
         take: 5,
       }),
       prisma.bootcampSession.findMany({
@@ -156,8 +156,8 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       where: { userId, isCompleted: false, OR: [{ bootcampSessionId: { not: null } }, { courseSessionId: { not: null } }] },
       orderBy: { updatedAt: 'desc' },
       include: {
-        bootcampSession: { include: { chapter: { include: { bootcamp: true } } } },
-        courseSession:   { include: { chapter: { include: { course: true } } } },
+        bootcampSession: { include: { chapter: { include: { bootcamp: { include: { chapters: { include: { sessions: true } } } } } } } },
+        courseSession:   { include: { chapter: { include: { course: { include: { chapters: { include: { sessions: true } } } } } } } },
       },
     })
 
@@ -165,20 +165,32 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
     if (lastProgress?.bootcampSession) {
       const bs = lastProgress.bootcampSession
       const bootcamp = bs.chapter.bootcamp
+      const totalSessions = bootcamp.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+      const progress = bootcampEnrollments.find((e) => e.bootcampId === bootcamp.id)?.progress ?? 0
+      const completedSessions = totalSessions > 0 ? Math.round((progress / 100) * totalSessions) : 0
       continueLearning = {
         type: 'bootcamp', id: bootcamp.id, sessionId: bs.id,
         title: bootcamp.title, sessionTitle: bs.title,
-        progress: bootcampEnrollments.find((e) => e.bootcampId === bootcamp.id)?.progress ?? 0,
+        progress,
         thumbnail: bootcamp.thumbnailUrl,
+        totalSessions,
+        completedSessions,
+        mentorName: 'Mentor Metro',
       }
     } else if (lastProgress?.courseSession) {
       const cs = lastProgress.courseSession
       const course = cs.chapter.course
+      const totalSessions = course.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+      const progress = courseEnrollments.find((e) => e.courseId === course.id)?.progress ?? 0
+      const completedSessions = totalSessions > 0 ? Math.round((progress / 100) * totalSessions) : 0
       continueLearning = {
         type: 'mini-course', id: course.id, sessionId: cs.id,
         title: course.title, sessionTitle: cs.title,
-        progress: courseEnrollments.find((e) => e.courseId === course.id)?.progress ?? 0,
+        progress,
         thumbnail: course.thumbnailUrl,
+        totalSessions,
+        completedSessions,
+        mentorName: (course as any).mentorName || 'Mentor Metro',
       }
     }
 
@@ -188,16 +200,26 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       const activeCourse = courseEnrollments.find(e => e.progress < 100)
 
       if (activeBootcamp && (!activeCourse || activeBootcamp.updatedAt >= activeCourse.updatedAt)) {
+        const totalSessions = activeBootcamp.bootcamp.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+        const completedSessions = totalSessions > 0 ? Math.round((activeBootcamp.progress / 100) * totalSessions) : 0
         continueLearning = {
           type: 'bootcamp', id: activeBootcamp.bootcamp.id, sessionId: '',
           title: activeBootcamp.bootcamp.title, sessionTitle: 'Lanjutkan Belajar',
           progress: activeBootcamp.progress, thumbnail: activeBootcamp.bootcamp.thumbnailUrl,
+          totalSessions,
+          completedSessions,
+          mentorName: 'Mentor Metro',
         }
       } else if (activeCourse) {
+        const totalSessions = activeCourse.course.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+        const completedSessions = totalSessions > 0 ? Math.round((activeCourse.progress / 100) * totalSessions) : 0
         continueLearning = {
           type: 'mini-course', id: activeCourse.course.id, sessionId: '',
           title: activeCourse.course.title, sessionTitle: 'Lanjutkan Belajar',
           progress: activeCourse.progress, thumbnail: activeCourse.course.thumbnailUrl,
+          totalSessions,
+          completedSessions,
+          mentorName: (activeCourse.course as any).mentorName || 'Mentor Metro',
         }
       }
     }
@@ -215,15 +237,27 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
     })
 
     const activeCourses = [
-      ...bootcampEnrollments.map((e) => ({
-        id: e.bootcampId, title: e.bootcamp.title, type: 'bootcamp' as const,
-        progress: e.progress, thumbnail: e.bootcamp.thumbnailUrl, field: e.field,
-      })),
-      ...courseEnrollments.map((e) => ({
-        id: e.courseId, title: e.course.title, type: 'mini-course' as const,
-        progress: e.progress, thumbnail: e.course.thumbnailUrl, field: e.course.field,
-        accessUntil: e.accessUntil.toISOString(),
-      })),
+      ...bootcampEnrollments.map((e) => {
+        const totalSessions = e.bootcamp.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+        const completedSessions = totalSessions > 0 ? Math.round((e.progress / 100) * totalSessions) : 0
+        return {
+          id: e.bootcampId, title: e.bootcamp.title, type: 'bootcamp' as const,
+          progress: e.progress, thumbnail: e.bootcamp.thumbnailUrl, field: e.field,
+          totalSessions,
+          completedSessions,
+        }
+      }),
+      ...courseEnrollments.map((e) => {
+        const totalSessions = e.course.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
+        const completedSessions = totalSessions > 0 ? Math.round((e.progress / 100) * totalSessions) : 0
+        return {
+          id: e.courseId, title: e.course.title, type: 'mini-course' as const,
+          progress: e.progress, thumbnail: e.course.thumbnailUrl, field: e.course.field,
+          accessUntil: e.accessUntil.toISOString(),
+          totalSessions,
+          completedSessions,
+        }
+      }),
     ]
 
     const startOfToday = new Date()
