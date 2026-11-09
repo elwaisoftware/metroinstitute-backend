@@ -123,7 +123,7 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
     const userId = req.user!.id
     await updateStreak(userId)
 
-    const [user, bootcampEnrollments, courseEnrollments, upcomingLive, unreadCount] = await Promise.all([
+    const [user, bootcampEnrollments, courseEnrollments, upcomingLive, registeredWebinarsUpcoming, unreadCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
         select: { id: true, name: true, photoUrl: true, totalXp: true, currentStreak: true, badgeLevel: true, selectedField: true },
@@ -146,6 +146,15 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
         },
         include: { chapter: { select: { bootcampId: true } } },
         orderBy: { liveScheduledAt: 'asc' },
+        take: 3,
+      }),
+      prisma.webinarRegistration.findMany({
+        where: {
+          userId,
+          webinar: { scheduledAt: { gt: new Date() }, isEnded: false },
+        },
+        include: { webinar: true },
+        orderBy: { webinar: { scheduledAt: 'asc' } },
         take: 3,
       }),
       prisma.notification.count({ where: { userId, isRead: false } }),
@@ -286,20 +295,176 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       allCompleted: Boolean(watchedVideoToday && didChallengeToday),
     }
 
+    // Gabungkan upcoming live dari Bootcamp dan Webinar/Inspire Talk yang diikuti mentee
+    const combinedUpcomingLive = [
+      ...upcomingLive.map((s) => ({
+        id: s.id,
+        bootcampId: s.chapter.bootcampId,
+        title: s.title,
+        scheduledAt: s.liveScheduledAt,
+        liveUrl: s.liveUrl,
+        type: 'bootcamp',
+      })),
+      ...registeredWebinarsUpcoming.map((r) => ({
+        id: r.webinar.id,
+        bootcampId: r.webinar.id,
+        title: r.webinar.title,
+        scheduledAt: r.webinar.scheduledAt,
+        liveUrl: r.webinar.meetingUrl || (r.webinar.googleMeetCode ? `https://meet.google.com/${r.webinar.googleMeetCode}` : ''),
+        type: 'webinar',
+      })),
+    ].sort((a, b) => {
+      const tA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0
+      const tB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0
+      return tA - tB
+    })
+
     res.json({
       success: true,
       data: {
         user,
         continueLearning,
         activeCourses,
-        upcomingLive: upcomingLive.map((s) => ({
-          id: s.id, bootcampId: s.chapter.bootcampId, title: s.title,
-          scheduledAt: s.liveScheduledAt, liveUrl: s.liveUrl,
-        })),
+        upcomingLive: combinedUpcomingLive,
         recommendations: recommendations.map((r) => ({ ...r, type: 'mini-course' as const })),
         unreadNotifications: unreadCount,
         dailyMissions,
       },
+    })
+  } catch (err) { next(err) }
+})
+
+// ── GET /users/timeline ──────────────────────────────────────
+// Mengembalikan SEMUA live session terjadwal HANYA untuk program yang sudah dibeli / diikuti user
+// (Bootcamp live session dari BootcampEnrollment + Webinar/Inspire Talk dari WebinarRegistration)
+userRouter.get('/timeline', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id
+
+    // 1. Live sessions dari Bootcamp yang dibeli mentee (BootcampEnrollment aktif)
+    const bootcampLiveSessions = await prisma.bootcampSession.findMany({
+      where: {
+        type: 'LIVE',
+        chapter: {
+          bootcamp: {
+            enrollments: {
+              some: { userId, isActive: true }
+            }
+          }
+        }
+      },
+      include: {
+        chapter: {
+          include: {
+            bootcamp: {
+              select: { id: true, title: true, thumbnailUrl: true }
+            }
+          }
+        },
+        attendances: {
+          where: { userId },
+          select: { id: true, status: true }
+        }
+      },
+      orderBy: { liveScheduledAt: 'asc' }
+    })
+
+    // 2. Webinars / Inspire Talk yang didaftarkan / dibeli mentee
+    const webinarRegistrations = await prisma.webinarRegistration.findMany({
+      where: { userId },
+      include: {
+        webinar: true
+      },
+      orderBy: { webinar: { scheduledAt: 'asc' } }
+    })
+
+    // 3. Format seragam seluruh live session
+    const liveItems = [
+      ...bootcampLiveSessions.map((s) => {
+        const isAttended = s.attendances && s.attendances.length > 0 && s.attendances[0].status === 'PRESENT'
+        return {
+          id: s.id,
+          sourceId: s.chapter.bootcamp.id,
+          sourceType: 'bootcamp' as const,
+          title: s.title,
+          programTitle: s.chapter.bootcamp.title,
+          description: s.description || 'Sesi Live Mentoring Bootcamp bersama mentor ahli.',
+          scheduledAt: s.liveScheduledAt,
+          durationMinutes: s.videoDuration ? Math.round(s.videoDuration / 60) : 90,
+          liveUrl: s.liveUrl || '',
+          category: 'Bootcamp Live',
+          instructor: 'Mentor Metro',
+          isCompleted: isAttended || (s.liveScheduledAt ? new Date(s.liveScheduledAt).getTime() < Date.now() : false),
+        }
+      }),
+      ...webinarRegistrations.map((r) => {
+        const w = r.webinar
+        return {
+          id: w.id,
+          sourceId: w.id,
+          sourceType: 'webinar' as const,
+          title: w.title,
+          programTitle: 'Inspire Talk',
+          description: w.shortDescription || w.description || 'Sesi Live Inspire Talk interaktif bersama speaker.',
+          scheduledAt: w.scheduledAt,
+          durationMinutes: w.duration || 90,
+          liveUrl: w.meetingUrl || (w.googleMeetCode ? `https://meet.google.com/${w.googleMeetCode}` : ''),
+          category: 'Inspire Talk',
+          instructor: w.speakerName || 'Speaker Metro',
+          isCompleted: r.attended || w.isEnded || (w.scheduledAt ? new Date(w.scheduledAt).getTime() < Date.now() : false),
+        }
+      })
+    ]
+
+    // Urutkan berdasarkan tanggal & waktu pelaksanaan
+    liveItems.sort((a, b) => {
+      const tA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0
+      const tB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0
+      return tA - tB
+    })
+
+    // 4. Hitung Today's Activity percentage secara dinamis
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    const todaysSessions = liveItems.filter((item) => {
+      if (!item.scheduledAt) return false
+      const itemDate = new Date(item.scheduledAt)
+      return itemDate >= startOfToday && itemDate <= endOfToday
+    })
+
+    let todayPercent = 0
+    if (todaysSessions.length > 0) {
+      const completedToday = todaysSessions.filter((s) => s.isCompleted).length
+      todayPercent = Math.round((completedToday / todaysSessions.length) * 100)
+    } else {
+      // Hitung dari misi harian / daily study progress jika hari ini tidak ada sesi live
+      const [watchedVideoToday, didChallengeToday] = await Promise.all([
+        prisma.sessionProgress.findFirst({
+          where: { userId, updatedAt: { gte: startOfToday } },
+        }),
+        prisma.challengeAttempt.findFirst({
+          where: { userId, submittedAt: { gte: startOfToday } },
+        }),
+      ])
+      let missionScore = 0
+      const totalMissions = 2
+      if (watchedVideoToday) missionScore++
+      if (didChallengeToday) missionScore++
+      todayPercent = Math.round((missionScore / totalMissions) * 100)
+    }
+
+    res.json({
+      success: true,
+      data: {
+        timeline: liveItems,
+        todaysActivity: {
+          percent: todayPercent,
+          totalSessionsToday: todaysSessions.length,
+          completedSessionsToday: todaysSessions.filter((s) => s.isCompleted).length,
+        }
+      }
     })
   } catch (err) { next(err) }
 })
