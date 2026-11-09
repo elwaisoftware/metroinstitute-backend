@@ -82,7 +82,7 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } })
     if (!user) throw createError(404, 'User tidak ditemukan')
 
-    if (price <= 0) throw createError(400, 'Harga tidak valid')
+    if (price < 0) throw createError(400, 'Harga tidak valid')
 
     // ── Voucher Validation & Calculation ──
     let appliedVoucher: any = null
@@ -128,8 +128,8 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
 
     const orderId = `METRO-${Date.now()}-${userId.slice(0, 6).toUpperCase()}`
 
-    // ── CASE 1: 100% DISCOUNT (FREE WITH VOUCHER) ──
-    if (finalAmount === 0 && appliedVoucher) {
+    // ── CASE 1: FREE PROGRAM OR 100% DISCOUNT WITH VOUCHER ──
+    if (finalAmount === 0) {
       const transaction = await prisma.transaction.create({
         data: {
           orderId,
@@ -140,18 +140,20 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
           webinarId,
           amount: 0,
           discountAmount,
-          voucherId: appliedVoucher.id,
+          voucherId: appliedVoucher ? appliedVoucher.id : null,
           status: 'SUCCESS',
           paidAt: new Date(),
           title,
         },
       })
 
-      // Increment voucher usage
-      await prisma.voucher.update({
-        where: { id: appliedVoucher.id },
-        data: { usageCount: { increment: 1 } },
-      }).catch((e) => logger.warn('Failed to increment voucher usage', e))
+      // Increment voucher usage if applied
+      if (appliedVoucher) {
+        await prisma.voucher.update({
+          where: { id: appliedVoucher.id },
+          data: { usageCount: { increment: 1 } },
+        }).catch((e) => logger.warn('Failed to increment voucher usage', e))
+      }
 
       // Direct enrollment
       await handleSuccessfulPayment(transaction)
@@ -165,7 +167,9 @@ transactionRouter.post('/initiate', async (req: AuthRequest, res: Response, next
           discountAmount,
           originalPrice: price,
           status: 'SUCCESS',
-          message: 'Pendaftaran berhasil menggunakan voucher!',
+          message: appliedVoucher
+            ? 'Pendaftaran berhasil menggunakan voucher 100%!'
+            : 'Pendaftaran program berhasil!',
         },
       })
     }
@@ -344,7 +348,7 @@ transactionRouter.post('/:orderId/verify', async (req: AuthRequest, res: Respons
 
     // Check with Midtrans status API
     try {
-      const statusRes = await (snap as any).transaction.status(orderId)
+      const statusRes = await (coreApi as any).transaction.status(orderId)
       const tStatus = statusRes.transaction_status
       const fraud = statusRes.fraud_status
       if (tStatus === 'settlement' || (tStatus === 'capture' && fraud !== 'deny')) {
