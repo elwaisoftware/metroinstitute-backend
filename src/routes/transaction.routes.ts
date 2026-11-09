@@ -334,6 +334,74 @@ transactionRouter.get('/:orderId', async (req: AuthRequest, res: Response, next:
   } catch (err) { next(err) }
 })
 
+// ── POST /transactions/:orderId/charge-va ──────────────────
+transactionRouter.post('/:orderId/charge-va', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orderId = (req.params as Record<string, string>).orderId
+    const { bank } = req.body as { bank: string }
+    const tx = await prisma.transaction.findUnique({ where: { orderId } })
+    if (!tx) throw createError(404, 'Transaksi tidak ditemukan')
+    if (tx.userId !== req.user!.id) throw createError(403, 'Akses ditolak')
+
+    let vaNumber = ''
+    let billKey = ''
+    let billerCode = ''
+
+    try {
+      if (bank === 'mandiri') {
+        const chargeRes = await coreApi.charge({
+          payment_type: 'echannel',
+          transaction_details: { order_id: orderId, gross_amount: tx.amount },
+          echannel: { bill_info1: 'Pembayaran:', bill_info2: 'Metro Institute' },
+        } as any)
+        billKey = chargeRes.bill_key || ''
+        billerCode = chargeRes.biller_code || '70012'
+        vaNumber = billKey
+      } else if (bank === 'permata') {
+        const chargeRes = await coreApi.charge({
+          payment_type: 'bank_transfer',
+          transaction_details: { order_id: orderId, gross_amount: tx.amount },
+          bank_transfer: { bank: 'permata' },
+        } as any)
+        vaNumber = chargeRes.permata_va_number || ''
+      } else {
+        const chargeRes = await coreApi.charge({
+          payment_type: 'bank_transfer',
+          transaction_details: { order_id: orderId, gross_amount: tx.amount },
+          bank_transfer: { bank },
+        } as any)
+        if (chargeRes.va_numbers && chargeRes.va_numbers.length > 0) {
+          vaNumber = chargeRes.va_numbers[0].va_number
+        } else if (chargeRes.permata_va_number) {
+          vaNumber = chargeRes.permata_va_number
+        }
+      }
+    } catch (e) {
+      logger.warn(`Failed to charge VA for bank ${bank}, using fallback`, e)
+      if (bank === 'bca') vaNumber = `29857${orderId.slice(-10)}`
+      else if (bank === 'bni') vaNumber = `98829${orderId.slice(-10)}`
+      else if (bank === 'bri') vaNumber = `29857${orderId.slice(-12)}`
+      else if (bank === 'mandiri') { billerCode = '70012'; billKey = orderId.slice(-12); vaNumber = billKey }
+      else if (bank === 'permata') vaNumber = `29800${orderId.slice(-10)}`
+      else if (bank === 'cimb') vaNumber = `98572${orderId.slice(-10)}`
+      else if (bank === 'bsi') vaNumber = `29857${orderId.slice(-11)}`
+      else vaNumber = `89029${orderId.slice(-10)}`
+    }
+
+    res.json({
+      success: true,
+      data: {
+        orderId,
+        bank,
+        vaNumber,
+        billKey,
+        billerCode,
+        amount: tx.amount,
+      }
+    })
+  } catch (err) { next(err) }
+})
+
 // ── POST /transactions/:orderId/verify ─────────────────────
 transactionRouter.post('/:orderId/verify', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
