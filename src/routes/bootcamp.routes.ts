@@ -8,35 +8,51 @@ import { updateBadge } from '../utils/badge'
 
 export const bootcampRouter = Router()
 
-export function computeBootcampStatus(b: any, now = new Date()): 'OPEN' | 'CLOSED' {
+export function computeBootcampStatus(b: any, now = new Date()): 'OPEN' | 'CLOSED' | 'ONGOING' | 'COMPLETED' {
   let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
   if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
     effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
   }
 
-  // 1. Selesai total jika tanggal akhir batch telah lewat
-  if (b.batchEndDate && now > new Date(b.batchEndDate)) {
-    return 'CLOSED'
+  const startDate = b.batchStartDate ? new Date(b.batchStartDate) : null
+  let endDate = b.batchEndDate ? new Date(b.batchEndDate) : null
+  if (endDate && endDate.getUTCHours() === 0 && endDate.getUTCMinutes() === 0 && endDate.getUTCSeconds() === 0) {
+    endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000 - 1)
   }
 
-  // 2. Ditutup jika batas akhir pendaftaran telah lewat
+  // 1. Berakhir (COMPLETED) jika tanggal akhir batch telah lewat
+  if (endDate && now > endDate) {
+    return 'COMPLETED'
+  }
+
+  // Jika tidak ada tanggal akhir spesifik, periksa apakah hari pelaksanaan sudah lewat (lewat 24 jam)
+  if (startDate && !endDate) {
+    const endOfStartDay = new Date(startDate.getTime() + 24 * 60 * 60 * 1000 - 1)
+    if (now > endOfStartDay) {
+      return 'COMPLETED'
+    }
+  }
+
+  // 2. Sedang Berlangsung (ONGOING) jika sudah masuk tanggal pelaksanaan
+  if (startDate && now >= startDate) {
+    if (!endDate || now <= endDate) {
+      return 'ONGOING'
+    }
+  }
+
+  // 3. Ditutup (CLOSED) jika batas akhir pendaftaran telah lewat
   if (effectiveDeadline && now >= effectiveDeadline) {
     return 'CLOSED'
   }
 
-  // 3. Ditutup jika tanggal mulai pendaftaran masih di masa depan (belum dibuka)
+  // 4. Ditutup jika tanggal mulai pendaftaran masih di masa depan (belum dibuka)
   if (b.registrationStartDate && now < new Date(b.registrationStartDate) && b.batchStatus !== 'OPEN') {
     return 'CLOSED'
   }
 
-  // 4. TERBUKA jika batas pendaftaran masih aktif di masa depan!
+  // 5. TERBUKA jika batas pendaftaran masih aktif di masa depan
   if (effectiveDeadline && now < effectiveDeadline) {
     return 'OPEN'
-  }
-
-  // 5. Ditutup jika batch sudah mulai dan tidak ada perpanjangan batas pendaftaran
-  if (b.batchStartDate && now >= new Date(b.batchStartDate)) {
-    return 'CLOSED'
   }
 
   // 6. Ditutup jika admin secara manual mengatur status CLOSED
@@ -48,8 +64,11 @@ export function computeBootcampStatus(b: any, now = new Date()): 'OPEN' | 'CLOSE
   if (b.batchStatus === 'OPEN') {
     return 'OPEN'
   }
+  if (b.batchStatus === 'COMPLETED') {
+    return 'COMPLETED'
+  }
   if (b.isPublished) {
-    if (!effectiveDeadline && (!b.batchStartDate || now < new Date(b.batchStartDate))) return 'OPEN'
+    if (!effectiveDeadline && (!startDate || now < startDate)) return 'OPEN'
   }
 
   return 'CLOSED'
@@ -64,7 +83,7 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
     if (level) where.level = level
     if (status) {
       if (status === 'CLOSED') {
-        where.batchStatus = { in: ['CLOSED', 'ONGOING', 'COMING_SOON'] }
+        where.batchStatus = { in: ['CLOSED', 'ONGOING', 'COMING_SOON', 'COMPLETED'] }
       } else {
         where.batchStatus = status
       }
@@ -85,10 +104,34 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
     })
     
     const now = new Date()
-    const mappedBootcamps = bootcamps.map(b => ({
-      ...b,
-      batchStatus: computeBootcampStatus(b, now),
-    }))
+    const mappedBootcamps = bootcamps
+      .map(b => ({
+        ...b,
+        batchStatus: computeBootcampStatus(b, now),
+      }))
+      .filter(b => {
+        // Jika filter status spesifik diminta (misal dari admin atau filter dropdown mentee), jangan sembunyikan
+        if (status) return true
+
+        // Pada katalog publik pembelian:
+        // Hapus dalam 24 jam setelah pendaftaran ditutup atau jika event telah berakhir
+        if (b.batchStatus === 'COMPLETED') {
+          return false
+        }
+
+        let effectiveDeadline = b.registrationDeadline ? new Date(b.registrationDeadline) : null
+        if (effectiveDeadline && effectiveDeadline.getUTCHours() === 0 && effectiveDeadline.getUTCMinutes() === 0 && effectiveDeadline.getUTCSeconds() === 0) {
+          effectiveDeadline = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000 - 1)
+        }
+        if (effectiveDeadline) {
+          const cutoff24h = new Date(effectiveDeadline.getTime() + 24 * 60 * 60 * 1000)
+          if (now > cutoff24h) {
+            return false
+          }
+        }
+
+        return true
+      })
     
     res.json({ success: true, data: mappedBootcamps })
   } catch (err) { next(err) }
@@ -284,6 +327,10 @@ bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthReques
     const sessionDurationMin = session.videoDuration ? Math.ceil(session.videoDuration / 60) : 90
     const minRequiredMinutes = Math.ceil(sessionDurationMin * 0.8)
 
+    const liveSchedMs = session.liveScheduledAt ? new Date(session.liveScheduledAt).getTime() : 0
+    const liveDurMs = sessionDurationMin * 60 * 1000
+    const isLiveEnded = liveSchedMs > 0 && (Date.now() > (liveSchedMs + liveDurMs))
+
     const totalSessions = allSessions.length
     const progress = totalSessions > 0 ? Math.round((completedIds.size / totalSessions) * 100) : 0
 
@@ -297,6 +344,8 @@ bootcampRouter.get('/:id/learn/:sessionId', authenticate, async (req: AuthReques
         })),
         currentSession: {
           ...session,
+          liveUrl: isLiveEnded ? null : session.liveUrl,
+          isLiveEnded,
           isCompleted: completedIds.has(sessionId),
           assignment,
           attendance: liveAttendance ? {

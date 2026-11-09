@@ -50,25 +50,42 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
       if (w.isEnded) return 'COMPLETED'
       if (!w.isPublished) return 'DRAFT'
       const scheduledTime = new Date(w.scheduledAt).getTime()
+      const durationMs = (w.duration || 90) * 60 * 1000
+      if (Date.now() >= scheduledTime + durationMs) return 'COMPLETED'
       const closeTime = scheduledTime - 2 * 60 * 60 * 1000 // H-2 jam
       const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
       if (Date.now() >= closeTime || isFull) return 'CLOSED'
       return 'OPEN'
     }
 
-    const items = webinars.map((w: any) => {
-      const scheduledTime = new Date(w.scheduledAt).getTime()
-      const isRegistrationClosed = Boolean(w.isEnded || Date.now() >= (scheduledTime - 2 * 60 * 60 * 1000))
-      return {
-        ...w,
-        status: computeWebinarStatus(w),
-        isRegistrationClosed,
-        endedAt: w.endedAt || (w.isEnded ? w.updatedAt : null),
-        isRegistered: userId ? (w.registrations?.length > 0) : false,
-        registrations: undefined,
-        meetingUrl: (userId && w.registrations?.length > 0) ? w.meetingUrl : null,
-      }
-    })
+    const items = webinars
+      .map((w: any) => {
+        const scheduledTime = new Date(w.scheduledAt).getTime()
+        const durationMs = (w.duration || 90) * 60 * 1000
+        const isSessionEnded = Boolean(w.isEnded || Date.now() >= (scheduledTime + durationMs))
+        const isRegistrationClosed = Boolean(isSessionEnded || Date.now() >= (scheduledTime - 2 * 60 * 60 * 1000))
+        const status = computeWebinarStatus(w)
+        const isRegistered = userId ? (w.registrations?.length > 0) : false
+        return {
+          ...w,
+          status,
+          isRegistrationClosed,
+          endedAt: w.endedAt || (isSessionEnded ? w.updatedAt : null),
+          isRegistered,
+          registrations: undefined,
+          meetingUrl: (isRegistered && !isSessionEnded) ? w.meetingUrl : null,
+        }
+      })
+      .filter((w: any) => {
+        if (status) return true
+        if (w.isRegistered) return true
+        if (w.status === 'COMPLETED') return false
+        const scheduledTime = new Date(w.scheduledAt).getTime()
+        const closeTime = scheduledTime - 2 * 60 * 60 * 1000
+        const cutoff24h = closeTime + 24 * 60 * 60 * 1000
+        if (Date.now() > cutoff24h) return false
+        return true
+      })
 
     res.json({ success: true, data: items })
   } catch (err) { next(err) }
@@ -124,17 +141,18 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
     }
 
     const scheduledTime = new Date(webinar.scheduledAt).getTime()
+    const durationMs = (webinar.duration || 90) * 60 * 1000
     const bufferBeforeMs = 30 * 60 * 1000 // 30 menit sebelum sesi
     const openTimeMs = scheduledTime - bufferBeforeMs
     const nowMs = Date.now()
 
-    // Selesai jika Admin menandai selesai (isEnded = true) atau melewati 24 jam
-    const isEnded = Boolean(webinar.isEnded) || (nowMs > scheduledTime + 24 * 60 * 60 * 1000)
+    // Selesai jika Admin menandai selesai (isEnded = true) atau durasi sesi telah terlewati
+    const isEnded = Boolean(webinar.isEnded) || (nowMs > scheduledTime + durationMs)
     const isUpcoming = !isEnded && nowMs < openTimeMs
     const isLiveWindow = !isEnded && nowMs >= openTimeMs
 
-    // Link meeting aktif selama sesi live (tidak akan mati mendadak jika molor)
-    const canAccessMeeting = isRegistered && isLiveWindow
+    // Link meeting aktif selama sesi live berjalan (setelah selesai, meeting link dinonaktifkan)
+    const canAccessMeeting = isRegistered && isLiveWindow && !isEnded
 
     const effectiveEndedAt = webinar.endedAt || (isEnded ? webinar.updatedAt : null)
 

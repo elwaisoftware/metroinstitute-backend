@@ -239,39 +239,9 @@ challengeRouter.get('/', async (req: AuthRequest, res: Response, next: NextFunct
         },
       })
     } else {
-      // Fallback: Jika admin belum memilihkan spesifik challenge untuk kelas ini,
-      // tampilkan challenge yang sesuai dengan bidang dan level kelas yang dibeli mentee
-      const classLevels = purchasedClasses.map((c) => c.level)
-      const where: Record<string, unknown> = {
-        isActive: true,
-        field: field && accessibleFields.includes(field) ? field : { in: accessibleFields },
-        level: level ? level : { in: classLevels },
-      }
-      if (type)  where.type   = type
-      if (search) where.title  = { contains: String(search), mode: 'insensitive' }
-
-      challenges = await prisma.challenge.findMany({
-        where,
-        orderBy: [{ field: 'asc' }, { level: 'asc' }, { createdAt: 'desc' }],
-        select: {
-          id: true, title: true, description: true, type: true,
-          field: true, level: true, xpReward: true, tags: true,
-          timeLimitSec: true,
-        },
-      })
-
-      // Auto-unlock bertahap (0%, 25%, 50%, 75%...)
-      challenges.forEach((ch, idx) => {
-        const matchingClass = purchasedClasses.find((c) => c.field === ch.field) || purchasedClasses[0]
-        const autoUnlockAt = Math.min(100, Math.floor((idx / Math.max(1, challenges.length)) * 100))
-        const isLocked = (matchingClass?.progressPct ?? 0) < autoUnlockAt
-        classChallengeMap.set(ch.id, {
-          unlockAtProgress: autoUnlockAt,
-          classTitle: matchingClass?.title || 'Kelas Terdaftar',
-          classProgress: matchingClass?.progressPct ?? 0,
-          isLocked,
-        })
-      })
+      // Jika admin belum menambahkan tantangan pada kelas yang dibeli mentee,
+      // jangan tampilkan tantangan (kosong) sesuai instruksi sistem
+      challenges = []
     }
 
     // User attempts per challenge
