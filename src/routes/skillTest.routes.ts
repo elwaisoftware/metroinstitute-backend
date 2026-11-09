@@ -14,13 +14,6 @@ skillTestRouter.get('/questions', async (req: AuthRequest, res: Response, next: 
   try {
     if (req.user!.role !== 'MENTEE') throw createError(403, 'Hanya untuk mentee')
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user!.id },
-      select: { skillTestDone: true },
-    })
-    // Allow re-take only if not done yet (or admin unlocked)
-    // if (user?.skillTestDone) throw createError(403, 'Kamu sudah menyelesaikan skill test')
-
     const questionsRaw = await prisma.skillTestQuestion.findMany({
       where: { isActive: true },
       orderBy: { orderIndex: 'asc' },

@@ -634,7 +634,7 @@ adminRouter.get('/project-submissions', async (req: AuthRequest, res: Response, 
 // ── PATCH /admin/project-submissions/:id/grade ────────────────────
 adminRouter.patch('/project-submissions/:id/grade', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { score, feedback } = z.object({
+    const { score } = z.object({
       score: z.number().min(0),
       feedback: z.string().optional()
     }).parse(req.body)
@@ -648,7 +648,7 @@ adminRouter.patch('/project-submissions/:id/grade', async (req: AuthRequest, res
 
     const passed = score >= (attempt.challenge.xpReward * 0.7) // Pass condition
 
-    const updated = await prisma.challengeAttempt.update({
+    await prisma.challengeAttempt.update({
       where: { id: (req.params as Record<string, string>).id },
       data: {
         isCorrect: passed,
@@ -767,7 +767,7 @@ adminRouter.patch('/skill-test/questions/reorder', async (req: AuthRequest, res:
 })
 
 // ── POST /admin/skill-test/shuffle-options ───────────────────
-adminRouter.post('/skill-test/shuffle-options', async (req: AuthRequest, res: Response, next: NextFunction) => {
+adminRouter.post('/skill-test/shuffle-options', async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const questions = await prisma.skillTestQuestion.findMany({ orderBy: { orderIndex: 'asc' } })
     const optionLetters = ['a', 'b', 'c', 'd']
@@ -792,7 +792,7 @@ adminRouter.post('/skill-test/shuffle-options', async (req: AuthRequest, res: Re
 })
 
 // ── GET /admin/certificate-templates ────────────────────────
-adminRouter.get('/certificate-templates', async (req: AuthRequest, res: Response, next: NextFunction) => {
+adminRouter.get('/certificate-templates', async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const templates = await prisma.certificateTemplate.findMany({
       orderBy: { createdAt: 'desc' }
@@ -1936,7 +1936,7 @@ adminRouter.post('/broadcast-wa', async (req, res, next) => {
 });
 
 // ── GET /admin/assignments ─────────────────────────────────
-adminRouter.get('/assignments', async (req: AuthRequest, res: Response, next: NextFunction) => {
+adminRouter.get('/assignments', async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const assignments = await prisma.assignment.findMany({
       include: {
@@ -2024,7 +2024,7 @@ adminRouter.get('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
 // ── PUT /admin/bootcamps/:id/sessions/:sessionId ──────────────
 adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { id: bootcampId, sessionId } = req.params as Record<string, string>;
+    const { sessionId } = req.params as Record<string, string>;
     const { 
       title, 
       description, 
@@ -2132,7 +2132,7 @@ adminRouter.get('/leads', async (req: AuthRequest, res: Response, next: NextFunc
 });
 
 // ── GET /admin/leads/export ──────────────────────────────────
-adminRouter.get('/leads/export', async (req: AuthRequest, res: Response, next: NextFunction) => {
+adminRouter.get('/leads/export', async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const leads = await prisma.lead.findMany({ orderBy: { createdAt: 'desc' } });
     

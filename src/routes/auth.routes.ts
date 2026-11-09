@@ -7,7 +7,6 @@ import { createError } from '../middleware/errorHandler'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { sendEmail } from '../utils/email'
 import { WhatsAppService } from '../services/whatsapp.service'
-import crypto from 'crypto'
 import { logger } from '../utils/logger'
 import { updateStreak } from '../utils/streak'
 
@@ -174,9 +173,8 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
     const refreshToken = req.cookies?.metro_refresh
     if (!refreshToken) throw createError(401, 'Refresh token tidak ada')
 
-    let payload: { id: string }
     try {
-      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { id: string }
+      jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!)
     } catch {
       throw createError(401, 'Refresh token tidak valid')
     }

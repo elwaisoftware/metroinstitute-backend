@@ -1,5 +1,4 @@
 import { Router, Response, NextFunction } from 'express'
-import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'

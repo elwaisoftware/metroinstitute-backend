@@ -21,8 +21,6 @@ leaderboardRouter.get('/', authenticate, async (req: AuthRequest, res: Response,
       dateFilter.setHours(0, 0, 0, 0)
     }
 
-    let entries: Array<{ userId: string; totalXp: number }>
-
     if (period === 'all-time') {
       // Use totalXp from users directly
       const users = await prisma.user.findMany({

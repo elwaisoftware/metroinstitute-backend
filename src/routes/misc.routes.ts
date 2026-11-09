@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction, Request } from 'express'
 import { z } from 'zod'
 import { prisma } from '../utils/prisma'
-import { optionalAuth, AuthRequest } from '../middleware/auth.middleware'
+import { optionalAuth } from '../middleware/auth.middleware'
 import { WhatsAppService } from '../services/whatsapp.service'
 import { computeBootcampStatus } from './bootcamp.routes'
 

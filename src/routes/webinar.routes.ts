@@ -1,5 +1,4 @@
 import { Router, Response, NextFunction } from 'express'
-import { z } from 'zod'
 import { prisma } from '../utils/prisma'
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.middleware'
 import { createError } from '../middleware/errorHandler'
@@ -148,7 +147,6 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
 
     // Selesai jika Admin menandai selesai (isEnded = true) atau durasi sesi telah terlewati
     const isEnded = Boolean(webinar.isEnded) || (nowMs > scheduledTime + durationMs)
-    const isUpcoming = !isEnded && nowMs < openTimeMs
     const isLiveWindow = !isEnded && nowMs >= openTimeMs
 
     // Link meeting aktif selama sesi live berjalan (setelah selesai, meeting link dinonaktifkan)

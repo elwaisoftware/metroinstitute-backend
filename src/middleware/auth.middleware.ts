@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { prisma } from '../utils/prisma'
 import { createError } from './errorHandler'
 
 export interface AuthRequest extends Request {
