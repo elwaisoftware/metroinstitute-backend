@@ -1086,6 +1086,7 @@ adminRouter.get('/bootcamps', async (req: AuthRequest, res: Response, next: Next
         hasCurriculum,
         name: item.title,
         fields: item.field ? [item.field] : [],
+        isPublished: item.isPublished,
         status: mappedStatus,
         batchStatus: computedBatchStatus,
         purchaseOpenAt: item.registrationStartDate,
@@ -1113,34 +1114,15 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     const { id } = req.params as Record<string, string>
     const data = req.body
 
+    const existing = await prisma.bootcamp.findUnique({ where: { id } })
+    if (!existing) throw createError(404, 'Bootcamp tidak ditemukan')
+
     if (data.status && data.status !== 'DRAFT') {
       const sessionCount = await prisma.bootcampSession.count({
         where: { chapter: { bootcampId: id } }
       })
       if (sessionCount === 0) {
         throw createError(400, 'Tidak dapat mempublikasikan bootcamp: Kurikulum belum ada. Tambahkan minimal 1 bab dan 1 materi/sesi di menu Silabus terlebih dahulu.')
-      }
-    }
-
-    let isPublished = undefined
-    let batchStatus = undefined
-
-    if (data.status) {
-      if (data.status === 'DRAFT') {
-        isPublished = false
-      } else {
-        isPublished = true
-        if (data.status === 'OPEN') {
-          batchStatus = 'OPEN'
-        } else if (data.status === 'ONGOING') {
-          batchStatus = 'ONGOING'
-        } else if (data.status === 'CLOSED') {
-          batchStatus = 'CLOSED'
-        } else if (data.status === 'PUBLISHED') {
-          batchStatus = 'OPEN'
-        } else {
-          batchStatus = data.status
-        }
       }
     }
 
@@ -1156,13 +1138,42 @@ adminRouter.patch('/bootcamps/:id', async (req: AuthRequest, res: Response, next
     if (data.purchaseCloseAt) updateData.registrationDeadline = data.purchaseCloseAt.includes('T') ? new Date(data.purchaseCloseAt) : new Date(`${data.purchaseCloseAt}T23:59:59.999+07:00`)
     if (data.startDate) updateData.batchStartDate = data.startDate.includes('T') ? new Date(data.startDate) : new Date(`${data.startDate}T00:00:00+07:00`)
     if (data.endDate) updateData.batchEndDate = data.endDate.includes('T') ? new Date(data.endDate) : new Date(`${data.endDate}T23:59:59.999+07:00`)
-    if (isPublished !== undefined) updateData.isPublished = isPublished
-    if (batchStatus !== undefined) updateData.batchStatus = batchStatus as any
-    if (updateData.registrationDeadline && new Date(updateData.registrationDeadline).getTime() > Date.now()) {
-      updateData.batchStatus = 'OPEN'
-    }
     if (data.certificateTemplateId !== undefined) updateData.certificateTemplateId = data.certificateTemplateId || null
     if (data.thumbnailUrl !== undefined) updateData.thumbnailUrl = data.thumbnailUrl || null
+
+    if (data.status) {
+      if (data.status === 'DRAFT') {
+        updateData.isPublished = false
+        updateData.batchStatus = 'COMING_SOON'
+      } else if (data.status === 'PUBLISHED' || data.status === 'OPEN') {
+        updateData.isPublished = true
+        const regStart = updateData.registrationStartDate ?? existing.registrationStartDate
+        const regEnd = updateData.registrationDeadline ?? existing.registrationDeadline
+        const batchStart = updateData.batchStartDate ?? existing.batchStartDate
+        const batchEnd = updateData.batchEndDate ?? existing.batchEndDate
+        updateData.batchStatus = computeBootcampStatus({
+          registrationStartDate: regStart,
+          registrationDeadline: regEnd,
+          batchStartDate: batchStart,
+          batchEndDate: batchEnd,
+          batchStatus: 'OPEN',
+        }, new Date())
+      }
+    } else if (updateData.registrationStartDate || updateData.registrationDeadline || updateData.batchStartDate || updateData.batchEndDate) {
+      if (existing.isPublished) {
+        const regStart = updateData.registrationStartDate ?? existing.registrationStartDate
+        const regEnd = updateData.registrationDeadline ?? existing.registrationDeadline
+        const batchStart = updateData.batchStartDate ?? existing.batchStartDate
+        const batchEnd = updateData.batchEndDate ?? existing.batchEndDate
+        updateData.batchStatus = computeBootcampStatus({
+          registrationStartDate: regStart,
+          registrationDeadline: regEnd,
+          batchStartDate: batchStart,
+          batchEndDate: batchEnd,
+          batchStatus: existing.batchStatus,
+        }, new Date())
+      }
+    }
 
     const bootcamp = await prisma.bootcamp.update({
       where: { id },
@@ -1207,6 +1218,7 @@ adminRouter.get('/bootcamps/:id', async (req: AuthRequest, res: Response, next: 
       data: {
         ...bootcamp,
         name: bootcamp.title,
+        isPublished: bootcamp.isPublished,
         quota: bootcamp.quota ?? 50,
         purchaseOpenAt: bootcamp.registrationStartDate,
         purchaseCloseAt: bootcamp.registrationDeadline,
