@@ -196,13 +196,46 @@ courseRouter.get('/:id/learn/:sessionId', async (req: AuthRequest, res: Response
   try {
     const { id: courseId, sessionId } = req.params as Record<string, string>
     const userId = req.user!.id
+    const isAdmin = req.user?.role === 'SUPER_ADMIN'
 
-    // Verify active enrollment with access window check
-    const enrollment = await prisma.courseEnrollment.findUnique({
-      where: { userId_courseId: { userId, courseId } },
+    let targetCourseId = courseId
+    let enrollment = await prisma.courseEnrollment.findUnique({
+      where: { userId_courseId: { userId, courseId: targetCourseId } },
     })
-    if (!enrollment || !enrollment.isActive || enrollment.accessUntil < new Date()) {
-      throw createError(403, 'Kamu belum memiliki akses ke kursus ini')
+
+    if (!enrollment?.isActive) {
+      const foundSession = await prisma.courseSession.findUnique({
+        where: { id: sessionId },
+        include: { chapter: { select: { courseId: true } } },
+      })
+      if (foundSession?.chapter?.courseId) {
+        targetCourseId = foundSession.chapter.courseId
+        enrollment = await prisma.courseEnrollment.findUnique({
+          where: { userId_courseId: { userId, courseId: targetCourseId } },
+        })
+      }
+    }
+
+    // Verify active enrollment with access window check (allow super admin or free courses)
+    if (!isAdmin && (!enrollment || !enrollment.isActive || enrollment.accessUntil < new Date())) {
+      const courseObj = await prisma.miniCourse.findUnique({ where: { id: targetCourseId }, select: { price: true } })
+      if (courseObj && courseObj.price === 0) {
+        enrollment = await prisma.courseEnrollment.upsert({
+          where: { userId_courseId: { userId, courseId: targetCourseId } },
+          create: {
+            userId,
+            courseId: targetCourseId,
+            isActive: true,
+            accessUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          },
+          update: {
+            isActive: true,
+            accessUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          },
+        })
+      } else {
+        throw createError(403, 'Kamu belum memiliki akses ke kursus ini')
+      }
     }
 
     const session = await prisma.courseSession.findUnique({
@@ -215,13 +248,13 @@ courseRouter.get('/:id/learn/:sessionId', async (req: AuthRequest, res: Response
         },
       },
     })
-    if (!session || session.chapter.courseId !== courseId) {
+    if (!session) {
       throw createError(404, 'Sesi tidak ditemukan')
     }
 
     // Sidebar chapters
     const chapters = await prisma.courseChapter.findMany({
-      where: { courseId },
+      where: { courseId: targetCourseId },
       orderBy: { orderIndex: 'asc' },
       include: {
         sessions: {
@@ -261,7 +294,7 @@ courseRouter.get('/:id/learn/:sessionId', async (req: AuthRequest, res: Response
         })),
         currentSession: { ...session, isCompleted: completedIds.has(sessionId), assignment },
         prevSessionId:  currentIdx > 0 ? allSessions[currentIdx - 1].id : null,
-        nextSessionId:  currentIdx < allSessions.length - 1 ? allSessions[currentIdx + 1].id : null,
+        nextSessionId:  currentIdx >= 0 && currentIdx < allSessions.length - 1 ? allSessions[currentIdx + 1].id : null,
         progress:       courseProgress,
       },
     })
@@ -293,7 +326,26 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
     }
 
     const isAdmin = req.user?.role === 'SUPER_ADMIN'
-    if (!isAdmin && !enrollment?.isActive) throw createError(403, 'Tidak memiliki akses')
+    if (!isAdmin && !enrollment?.isActive) {
+      const courseObj = await prisma.miniCourse.findUnique({ where: { id: targetCourseId }, select: { price: true } })
+      if (courseObj && courseObj.price === 0) {
+        enrollment = await prisma.courseEnrollment.upsert({
+          where: { userId_courseId: { userId, courseId: targetCourseId } },
+          create: {
+            userId,
+            courseId: targetCourseId,
+            isActive: true,
+            accessUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          },
+          update: {
+            isActive: true,
+            accessUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          },
+        })
+      } else {
+        throw createError(403, 'Tidak memiliki akses')
+      }
+    }
 
     // Idempotent guard
     const existing = await prisma.sessionProgress.findFirst({
@@ -322,26 +374,28 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
 
     // Recalculate progress
     const allCourseSessions = await prisma.courseSession.findMany({
-      where: { chapter: { courseId } },
+      where: { chapter: { courseId: targetCourseId } },
       select: { id: true },
     })
     const completedCount = await prisma.sessionProgress.count({
       where: { userId, courseSessionId: { in: allCourseSessions.map((s) => s.id) }, isCompleted: true },
     })
-    const progress = Math.round((completedCount / allCourseSessions.length) * 100)
+    const progress = allCourseSessions.length > 0 ? Math.round((completedCount / allCourseSessions.length) * 100) : 100
 
-    await prisma.courseEnrollment.update({
-      where: { userId_courseId: { userId, courseId } },
-      data:  { progress },
-    })
+    if (enrollment) {
+      await prisma.courseEnrollment.update({
+        where: { userId_courseId: { userId, courseId: targetCourseId } },
+        data:  { progress },
+      })
+    }
 
     // Auto-certificate
     if (progress === 100) {
-      const existingCert = await prisma.certificate.findFirst({ where: { userId, courseId } })
+      const existingCert = await prisma.certificate.findFirst({ where: { userId, courseId: targetCourseId } })
       if (!existingCert) {
         const credentialId = `METRO-COURSE-${Date.now().toString(36).toUpperCase()}`
         await prisma.certificate.create({
-          data: { userId, courseId, productType: 'MINI_COURSE', credentialId },
+          data: { userId, courseId: targetCourseId, productType: 'MINI_COURSE', credentialId },
         })
         await prisma.notification.create({
           data: {
@@ -349,7 +403,7 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
             type:  'BADGE_UPGRADE',
             title: '🎓 Sertifikat Diterbitkan!',
             body:  `Selamat! Sertifikatmu untuk kursus ini siap diunduh.`,
-            data:  { credentialId, courseId },
+            data:  { credentialId, courseId: targetCourseId },
           },
         })
       }

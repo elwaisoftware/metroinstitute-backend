@@ -424,7 +424,7 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
 
     // Recalculate bootcamp progress
     const allBootcampSessions = await prisma.bootcampSession.findMany({
-      where: { chapter: { bootcampId } },
+      where: { chapter: { bootcampId: targetBootcampId } },
       select: { id: true },
     })
     const completedCount = await prisma.sessionProgress.count({
@@ -434,12 +434,14 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
         isCompleted: true,
       },
     })
-    const progress = Math.round((completedCount / allBootcampSessions.length) * 100)
+    const progress = allBootcampSessions.length > 0 ? Math.round((completedCount / allBootcampSessions.length) * 100) : 100
 
-    await prisma.bootcampEnrollment.update({
-      where: { userId_bootcampId: { userId, bootcampId } },
-      data:  { progress },
-    })
+    if (enrollment) {
+      await prisma.bootcampEnrollment.update({
+        where: { userId_bootcampId: { userId, bootcampId: targetBootcampId } },
+        data:  { progress },
+      })
+    }
 
     // Auto-certificate on 100%
     if (progress === 100) {
