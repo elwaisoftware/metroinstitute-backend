@@ -274,10 +274,26 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
     const { id: courseId, sessionId } = req.params as Record<string, string>
     const userId = req.user!.id
 
-    const enrollment = await prisma.courseEnrollment.findUnique({
-      where: { userId_courseId: { userId, courseId } },
+    let targetCourseId = courseId
+    let enrollment = await prisma.courseEnrollment.findUnique({
+      where: { userId_courseId: { userId, courseId: targetCourseId } },
     })
-    if (!enrollment?.isActive) throw createError(403, 'Tidak memiliki akses')
+
+    if (!enrollment?.isActive) {
+      const foundSession = await prisma.courseSession.findUnique({
+        where: { id: sessionId },
+        include: { chapter: { select: { courseId: true } } },
+      })
+      if (foundSession?.chapter?.courseId) {
+        targetCourseId = foundSession.chapter.courseId
+        enrollment = await prisma.courseEnrollment.findUnique({
+          where: { userId_courseId: { userId, courseId: targetCourseId } },
+        })
+      }
+    }
+
+    const isAdmin = req.user?.role === 'SUPER_ADMIN'
+    if (!isAdmin && !enrollment?.isActive) throw createError(403, 'Tidak memiliki akses')
 
     // Idempotent guard
     const existing = await prisma.sessionProgress.findFirst({

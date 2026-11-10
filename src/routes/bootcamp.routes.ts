@@ -376,10 +376,26 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
     const { id: bootcampId, sessionId } = req.params as Record<string, string>
     const userId = req.user!.id
 
-    const enrollment = await prisma.bootcampEnrollment.findUnique({
-      where: { userId_bootcampId: { userId, bootcampId } },
+    let targetBootcampId = bootcampId
+    let enrollment = await prisma.bootcampEnrollment.findUnique({
+      where: { userId_bootcampId: { userId, bootcampId: targetBootcampId } },
     })
-    if (!enrollment?.isActive) throw createError(403, 'Tidak memiliki akses')
+
+    if (!enrollment?.isActive) {
+      const foundSession = await prisma.bootcampSession.findUnique({
+        where: { id: sessionId },
+        include: { chapter: { select: { bootcampId: true } } },
+      })
+      if (foundSession?.chapter?.bootcampId) {
+        targetBootcampId = foundSession.chapter.bootcampId
+        enrollment = await prisma.bootcampEnrollment.findUnique({
+          where: { userId_bootcampId: { userId, bootcampId: targetBootcampId } },
+        })
+      }
+    }
+
+    const isAdmin = req.user?.role === 'SUPER_ADMIN'
+    if (!isAdmin && !enrollment?.isActive) throw createError(403, 'Tidak memiliki akses')
 
     // Idempotent — already completed
     const existing = await prisma.sessionProgress.findFirst({
