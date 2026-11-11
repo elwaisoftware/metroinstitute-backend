@@ -1375,7 +1375,8 @@ adminRouter.post('/bootcamps/:id/chapters/:chapterId/sessions', async (req: Auth
 
     const rawScheduledAt = scheduledAt ?? req.body.liveScheduledAt;
     const finalScheduledAt = rawScheduledAt ? new Date(rawScheduledAt) : null;
-    const finalDuration = durationMin !== undefined ? Number(durationMin) : (req.body.videoDuration !== undefined ? Number(req.body.videoDuration) : 90);
+    const rawDuration = durationMin !== undefined ? Number(durationMin) : (req.body.videoDuration !== undefined ? Number(req.body.videoDuration) : 90);
+    const finalDuration = (rawDuration < 60 && req.body.type === 'MATERIAL') ? rawDuration * 60 : rawDuration;
     const finalIsPreview = isPreview !== undefined ? Boolean(isPreview) : Boolean(req.body.isFreePreview);
     const finalLiveUrl = meetingUrl || liveUrl;
     const rawMatUrl = materialUrl ?? (Array.isArray(req.body.materials) && req.body.materials[0]?.url ? req.body.materials[0].url : '');
@@ -1651,8 +1652,10 @@ adminRouter.post('/courses/:id/sessions', async (req: AuthRequest, res: Response
       data: {
         chapterId: chapter.id,
         title: data.title,
+        description: data.description !== undefined ? data.description : undefined,
         type: data.type,
         videoUrl: data.videoUrl || null,
+        videoDuration: data.durationMin !== undefined ? (Number(data.durationMin) * (Number(data.durationMin) < 60 ? 60 : 1)) : (data.videoDuration !== undefined ? Number(data.videoDuration) : undefined),
         materials: data.materialUrl ? [{ name: 'Materi', url: data.materialUrl }] : [],
         isFreePreview: data.isPreview || false,
         orderIndex: newOrderIndex,
@@ -1686,6 +1689,7 @@ adminRouter.put('/courses/sessions/:id', async (req: AuthRequest, res: Response,
         description: data.description !== undefined ? data.description : undefined,
         type: data.type !== undefined ? data.type : undefined,
         videoUrl: data.videoUrl !== undefined ? (data.videoUrl || null) : undefined,
+        videoDuration: data.durationMin !== undefined ? (Number(data.durationMin) * (Number(data.durationMin) < 60 ? 60 : 1)) : (data.videoDuration !== undefined ? Number(data.videoDuration) : undefined),
         materials: parsedMaterials,
         isFreePreview: data.isPreview !== undefined ? Boolean(data.isPreview) : (data.isFreePreview !== undefined ? Boolean(data.isFreePreview) : undefined),
         xpReward: data.xpReward !== undefined ? Number(data.xpReward) : undefined,
@@ -2066,7 +2070,10 @@ adminRouter.put('/bootcamps/:id/sessions/:sessionId', async (req: AuthRequest, r
     let finalLiveUrl = liveUrl !== undefined ? liveUrl : meetingUrl;
 
     const rawDuration = durationMin !== undefined ? durationMin : videoDuration;
-    const parsedDuration = rawDuration !== undefined ? ((rawDuration === '' || rawDuration === null) ? null : Number(rawDuration)) : undefined;
+    let parsedDuration = rawDuration !== undefined ? ((rawDuration === '' || rawDuration === null) ? null : Number(rawDuration)) : undefined;
+    if (parsedDuration !== undefined && parsedDuration !== null && parsedDuration < 60 && req.body.type === 'MATERIAL') {
+      parsedDuration = parsedDuration * 60;
+    }
 
     const rawPreview = isPreview !== undefined ? isPreview : isFreePreview;
 
