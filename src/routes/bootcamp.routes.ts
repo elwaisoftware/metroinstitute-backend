@@ -94,7 +94,7 @@ bootcampRouter.get('/', optionalAuth, async (req: Request, res: Response, next: 
       where,
       orderBy: [{ batchStatus: 'asc' }, { createdAt: 'desc' }],
       select: {
-        id: true, title: true, shortDescription: true, field: true, level: true,
+        id: true, title: true, shortDescription: true, description: true, field: true, level: true,
         price: true, thumbnailUrl: true, totalDuration: true, rating: true,
         reviewCount: true, enrollmentCount: true, batchStatus: true,
         registrationStartDate: true, registrationDeadline: true, batchStartDate: true, batchEndDate: true,
