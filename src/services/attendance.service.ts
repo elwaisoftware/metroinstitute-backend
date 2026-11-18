@@ -196,8 +196,8 @@ export async function processGoogleMeetAttendance(
       continue
     }
 
-    // Tentukan status berdasarkan threshold 80%
-    const isPresent = participant.durationMinutes >= minDurationMinutes
+    // Tentukan status: Semua peserta yang terdeteksi masuk ke sesi Meet otomatis terdaftar dan dianggap HADIR (durasi >= 1 menit)
+    const isPresent = participant.durationMinutes >= 1
     const attendanceStatus = isPresent ? 'PRESENT' : 'ABSENT'
 
     // Simpan atau update rekaman kehadiran (idempotent upsert)
@@ -605,7 +605,8 @@ export async function processWebinarAttendance(
     }
 
     const durationMinutes = Math.max(0, Math.round(p.durationMinutes || 0))
-    const isMetThreshold = durationMinutes >= minRequiredMinutes
+    // Semua peserta yang masuk ke sesi Meet otomatis terdaftar dan dianggap HADIR (durasi >= 1 menit)
+    const isMetThreshold = durationMinutes >= 1
     const status: AttendanceStatus = isMetThreshold ? 'PRESENT' : 'ABSENT'
 
     // Upsert WebinarRegistration
