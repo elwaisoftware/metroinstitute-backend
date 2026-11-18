@@ -297,7 +297,8 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
       const result = await processWebinarAttendance(
         webinarId,
         conferenceId,
-        participants as GoogleMeetParticipant[]
+        participants as GoogleMeetParticipant[],
+        typeof actualDuration === 'number' ? actualDuration : undefined
       )
 
       return res.json({
@@ -354,7 +355,8 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
       const result = await processWebinarAttendance(
         targetId,
         conferenceId,
-        participants as GoogleMeetParticipant[]
+        participants as GoogleMeetParticipant[],
+        typeof actualDuration === 'number' ? actualDuration : undefined
       )
 
       return res.json({

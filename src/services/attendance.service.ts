@@ -560,7 +560,8 @@ export async function issueWebinarCertificate(userId: string, webinarId: string)
 export async function processWebinarAttendance(
   webinarId: string,
   conferenceId: string,
-  participants: GoogleMeetParticipant[]
+  participants: GoogleMeetParticipant[],
+  actualMeetDurationMinutes?: number
 ) {
   const webinar = await prisma.webinar.findUnique({
     where: { id: webinarId },
@@ -570,7 +571,17 @@ export async function processWebinarAttendance(
     throw new Error(`Webinar dengan ID ${webinarId} tidak ditemukan`)
   }
 
-  const sessionDuration = webinar.duration || 90
+  const scheduledDuration = webinar.duration || 90
+
+  // Aturan 80% dinamis:
+  // Jika durasi aktual Meet lebih singkat dari jadwal (misal live selesai dlm 60m dari jadwal 90m),
+  // maka 80% dihitung dari durasi aktual (60m) agar adil bagi mentee.
+  // Jika durasi aktual melebihi jadwal (overtime >90m, misal 100m karena Q&A panjang),
+  // maka 80% tetap dihitung dari durasi jadwal (90m) agar mentee tidak dirugikan sesi tambahan.
+  const sessionDuration = actualMeetDurationMinutes && actualMeetDurationMinutes > 0
+    ? Math.min(scheduledDuration, actualMeetDurationMinutes)
+    : scheduledDuration
+
   const thresholdPct = (webinar.attendanceThresholdPct || 80) / 100
   const minRequiredMinutes = Math.round(sessionDuration * thresholdPct)
   const xpReward = webinar.xpReward || 25
