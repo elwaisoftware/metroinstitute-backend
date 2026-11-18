@@ -7,8 +7,8 @@ import { AttendanceStatus } from '@prisma/client'
 const ATTENDANCE_THRESHOLD_PCT = 0.80 // 80%
 
 export interface GoogleMeetParticipant {
-  email: string
-  displayName: string
+  email?: string
+  displayName?: string
   durationMinutes: number // total menit aktif di Meet
   joinTime?: string       // ISO string
   leaveTime?: string      // ISO string
@@ -145,7 +145,10 @@ export async function processGoogleMeetAttendance(
   })
 
   const enrolledEmailMap = new Map(
-    enrollments.map((e) => [e.user.email.toLowerCase(), e.user])
+    enrollments.map((e) => [e.user.email.toLowerCase().trim(), e.user])
+  )
+  const enrolledNameMap = new Map(
+    enrollments.map((e) => [e.user.name.toLowerCase().trim(), e.user])
   )
 
   // 3. Proses tiap peserta dari log Google Meet
@@ -163,15 +166,29 @@ export async function processGoogleMeetAttendance(
   }
 
   for (const participant of participants) {
-    const email = participant.email.toLowerCase()
-    const user = enrolledEmailMap.get(email)
+    const email = (participant.email || '').toLowerCase().trim()
+    const displayName = (participant.displayName || '').trim()
+    const cleanName = displayName.toLowerCase()
+
+    let user = email ? enrolledEmailMap.get(email) : null
+    if (!user && cleanName) {
+      user = enrolledNameMap.get(cleanName)
+      if (!user) {
+        for (const [enrolledName, u] of enrolledNameMap.entries()) {
+          if (enrolledName && (cleanName.includes(enrolledName) || enrolledName.includes(cleanName))) {
+            user = u
+            break
+          }
+        }
+      }
+    }
 
     // Peserta tidak terdaftar di bootcamp ini — lewati
     if (!user) {
       results.tidakTerdaftar++
       results.detail.push({
-        email: participant.email,
-        name: participant.displayName,
+        email: participant.email || '-',
+        name: participant.displayName || '-',
         durationMinutes: participant.durationMinutes,
         minRequired: minDurationMinutes,
         status: 'NOT_ENROLLED',
@@ -247,8 +264,8 @@ export async function processGoogleMeetAttendance(
     }
 
     results.detail.push({
-      email: participant.email,
-      name: participant.displayName,
+      email: participant.email || user.email,
+      name: participant.displayName || user.name,
       durationMinutes: participant.durationMinutes,
       minRequired: minDurationMinutes,
       status: attendanceStatus,
@@ -562,14 +579,28 @@ export async function processWebinarAttendance(
 
   for (const p of participants) {
     const cleanEmail = p.email?.trim().toLowerCase()
-    if (!cleanEmail) continue
+    let user = null
 
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: cleanEmail, mode: 'insensitive' } },
-    })
+    if (cleanEmail) {
+      user = await prisma.user.findFirst({
+        where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+      })
+    }
+
+    if (!user && p.displayName) {
+      const cleanName = p.displayName.trim()
+      user = await prisma.user.findFirst({
+        where: { name: { equals: cleanName, mode: 'insensitive' } },
+      })
+      if (!user) {
+        user = await prisma.user.findFirst({
+          where: { name: { contains: cleanName, mode: 'insensitive' } },
+        })
+      }
+    }
 
     if (!user) {
-      results.push({ email: cleanEmail, status: 'UNREGISTERED_EMAIL' })
+      results.push({ email: cleanEmail || p.displayName || 'unknown', status: 'UNREGISTERED_EMAIL' })
       continue
     }
 
@@ -610,7 +641,7 @@ export async function processWebinarAttendance(
 
     results.push({
       userId: user.id,
-      email: cleanEmail,
+      email: cleanEmail || user.email,
       status,
       durationMinutes,
       certificateIssued: isMetThreshold,

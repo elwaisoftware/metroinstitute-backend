@@ -214,13 +214,18 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
     }
 
     let targetId = webinarId || sessionId
+    const cleanConfId = (conferenceId || '').trim().toLowerCase()
+    const codeNoDash = cleanConfId.replace(/-/g, '')
 
     // Auto-match dari conferenceId jika targetId belum disediakan
-    if (!targetId && conferenceId) {
+    if (!targetId && cleanConfId) {
       const sessionByMeet = await prisma.bootcampSession.findFirst({
         where: {
           type: 'LIVE',
-          liveUrl: { contains: conferenceId },
+          OR: [
+            { liveUrl: { contains: cleanConfId } },
+            { liveUrl: { contains: codeNoDash } },
+          ],
         },
         select: { id: true },
       })
@@ -230,8 +235,10 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
         const webinarByMeet = await prisma.webinar.findFirst({
           where: {
             OR: [
-              { googleMeetCode: conferenceId },
-              { meetingUrl: { contains: conferenceId } },
+              { googleMeetCode: cleanConfId },
+              { googleMeetCode: codeNoDash },
+              { meetingUrl: { contains: cleanConfId } },
+              { meetingUrl: { contains: codeNoDash } },
             ],
           },
           select: { id: true },
