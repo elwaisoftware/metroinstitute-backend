@@ -401,7 +401,7 @@ userRouter.get('/timeline', async (req: AuthRequest, res: Response, next: NextFu
     // 3. Format seragam seluruh live session
     const liveItems = [
       ...bootcampLiveSessions.map((s) => {
-        const isAttended = s.attendances && s.attendances.length > 0 && s.attendances[0].status === 'PRESENT'
+        const isAttended = Boolean(s.attendances && s.attendances.length > 0 && (s.attendances[0].status === 'PRESENT' || s.attendances[0].status === 'MANUAL' || s.attendances[0].status === 'EXCUSED'))
         return {
           id: s.id,
           sourceId: s.chapter.bootcamp.id,
@@ -414,7 +414,7 @@ userRouter.get('/timeline', async (req: AuthRequest, res: Response, next: NextFu
           liveUrl: s.liveUrl || '',
           category: 'Bootcamp Live',
           instructor: 'Mentor Metro',
-          isCompleted: isAttended || (s.liveScheduledAt ? new Date(s.liveScheduledAt).getTime() < Date.now() : false),
+          isCompleted: isAttended,
         }
       }),
       ...webinarRegistrations.map((r) => {
@@ -431,7 +431,7 @@ userRouter.get('/timeline', async (req: AuthRequest, res: Response, next: NextFu
           liveUrl: w.meetingUrl || (w.googleMeetCode ? `https://meet.google.com/${w.googleMeetCode}` : ''),
           category: 'Inspire Talk',
           instructor: w.speakerName || 'Speaker Metro',
-          isCompleted: r.attended || w.isEnded || (w.scheduledAt ? new Date(w.scheduledAt).getTime() < Date.now() : false),
+          isCompleted: Boolean(r.attended || w.isEnded),
         }
       })
     ]

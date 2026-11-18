@@ -49,8 +49,6 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
       if (w.isEnded) return 'COMPLETED'
       if (!w.isPublished) return 'DRAFT'
       const scheduledTime = new Date(w.scheduledAt).getTime()
-      const durationMs = (w.duration || 90) * 60 * 1000
-      if (Date.now() >= scheduledTime + durationMs) return 'COMPLETED'
       const closeTime = scheduledTime - 2 * 60 * 60 * 1000 // H-2 jam
       const isFull = Boolean(w.quota && (w._count?.registrations ?? 0) >= w.quota)
       if (Date.now() >= closeTime || isFull) return 'CLOSED'
@@ -60,8 +58,7 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
     const items = webinars
       .map((w: any) => {
         const scheduledTime = new Date(w.scheduledAt).getTime()
-        const durationMs = (w.duration || 90) * 60 * 1000
-        const isSessionEnded = Boolean(w.isEnded || Date.now() >= (scheduledTime + durationMs))
+        const isSessionEnded = Boolean(w.isEnded)
         const isRegistrationClosed = Boolean(isSessionEnded || Date.now() >= (scheduledTime - 2 * 60 * 60 * 1000))
         const status = computeWebinarStatus(w)
         const isRegistered = userId ? (w.registrations?.length > 0) : false
@@ -69,7 +66,7 @@ webinarRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response, nex
           ...w,
           status,
           isRegistrationClosed,
-          endedAt: w.endedAt || (isSessionEnded ? w.updatedAt : null),
+          endedAt: w.endedAt || null,
           isRegistered,
           registrations: undefined,
           meetingUrl: (isRegistered && !isSessionEnded) ? w.meetingUrl : null,
@@ -145,14 +142,14 @@ webinarRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response, 
     const openTimeMs = scheduledTime - bufferBeforeMs
     const nowMs = Date.now()
 
-    // Selesai jika Admin menandai selesai (isEnded = true) atau durasi sesi telah terlewati
-    const isEnded = Boolean(webinar.isEnded) || (nowMs > scheduledTime + durationMs)
+    // Sesi webinar HANYA selesai jika Admin atau Webhook kehadiran menandai selesai (isEnded = true)
+    const isEnded = Boolean(webinar.isEnded)
     const isLiveWindow = !isEnded && nowMs >= openTimeMs
 
     // Link meeting aktif selama sesi live berjalan (setelah selesai, meeting link dinonaktifkan)
     const canAccessMeeting = isRegistered && isLiveWindow && !isEnded
 
-    const effectiveEndedAt = webinar.endedAt || (isEnded ? webinar.updatedAt : null)
+    const effectiveEndedAt = webinar.endedAt || null
 
     let attendance = null
     if (userId && isRegistered) {
