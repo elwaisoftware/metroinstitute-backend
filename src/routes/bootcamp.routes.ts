@@ -151,15 +151,47 @@ bootcampRouter.get('/enrolled', authenticate, async (req: AuthRequest, res: Resp
       orderBy: { createdAt: 'desc' },
     })
 
-    const result = enrollments.map((e) => ({
-      id:           e.bootcamp.id,
-      title:        e.bootcamp.title,
-      field:        e.bootcamp.field,
-      thumbnailUrl: e.bootcamp.thumbnailUrl,
-      startDate:    e.bootcamp.batchStartDate,
-      progress:     Math.round(e.progress),
-      type:         'bootcamp',
-    }))
+    const result = await Promise.all(
+      enrollments.map(async (e) => {
+        const allSessions = await prisma.bootcampSession.findMany({
+          where: { chapter: { bootcampId: e.bootcamp.id } },
+          select: { id: true },
+        })
+        const totalSessions = allSessions.length
+        const completedCount = totalSessions > 0
+          ? await prisma.sessionProgress.count({
+              where: {
+                userId,
+                bootcampSessionId: { in: allSessions.map((s) => s.id) },
+                isCompleted: true,
+              },
+            })
+          : 0
+
+        const calculatedProgress = totalSessions > 0
+          ? Math.round((completedCount / totalSessions) * 100)
+          : 0
+
+        if (e.progress !== calculatedProgress) {
+          await prisma.bootcampEnrollment.update({
+            where: { userId_bootcampId: { userId, bootcampId: e.bootcamp.id } },
+            data: { progress: calculatedProgress },
+          }).catch(() => {})
+        }
+
+        return {
+          id:           e.bootcamp.id,
+          title:        e.bootcamp.title,
+          field:        e.bootcamp.field,
+          thumbnailUrl: e.bootcamp.thumbnailUrl,
+          startDate:    e.bootcamp.batchStartDate,
+          progress:     calculatedProgress,
+          totalSessions,
+          completedSessions: completedCount,
+          type:         'bootcamp',
+        }
+      })
+    )
     res.json({ success: true, data: result })
   } catch (err) { next(err) }
 })
@@ -434,7 +466,7 @@ bootcampRouter.post('/:id/sessions/:sessionId/complete', authenticate, async (re
         isCompleted: true,
       },
     })
-    const progress = allBootcampSessions.length > 0 ? Math.round((completedCount / allBootcampSessions.length) * 100) : 100
+    const progress = allBootcampSessions.length > 0 ? Math.round((completedCount / allBootcampSessions.length) * 100) : 0
 
     if (enrollment) {
       await prisma.bootcampEnrollment.update({

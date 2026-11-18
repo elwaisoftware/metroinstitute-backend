@@ -245,29 +245,49 @@ userRouter.get('/basecamp', async (req: AuthRequest, res: Response, next: NextFu
       select: { id: true, title: true, price: true, field: true, level: true, thumbnailUrl: true, rating: true },
     })
 
-    const activeCourses = [
-      ...bootcampEnrollments.map((e) => {
-        const totalSessions = e.bootcamp.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
-        const completedSessions = totalSessions > 0 ? Math.round((e.progress / 100) * totalSessions) : 0
+    const activeCourses = await Promise.all([
+      ...bootcampEnrollments.map(async (e) => {
+        const allSessionIds = e.bootcamp.chapters?.flatMap((c: any) => (c.sessions || []).map((s: any) => s.id)) || []
+        const totalSessions = allSessionIds.length
+        const completedSessions = totalSessions > 0
+          ? await prisma.sessionProgress.count({
+              where: {
+                userId,
+                bootcampSessionId: { in: allSessionIds },
+                isCompleted: true,
+              },
+            })
+          : 0
+        const progress = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0
         return {
           id: e.bootcampId, title: e.bootcamp.title, type: 'bootcamp' as const,
-          progress: e.progress, thumbnail: e.bootcamp.thumbnailUrl, field: e.field,
+          progress, thumbnail: e.bootcamp.thumbnailUrl, field: e.field,
           totalSessions,
           completedSessions,
         }
       }),
-      ...courseEnrollments.map((e) => {
-        const totalSessions = e.course.chapters?.reduce((acc: number, c: any) => acc + (c.sessions?.length || 0), 0) || 0
-        const completedSessions = totalSessions > 0 ? Math.round((e.progress / 100) * totalSessions) : 0
+      ...courseEnrollments.map(async (e) => {
+        const allSessionIds = e.course.chapters?.flatMap((c: any) => (c.sessions || []).map((s: any) => s.id)) || []
+        const totalSessions = allSessionIds.length
+        const completedSessions = totalSessions > 0
+          ? await prisma.sessionProgress.count({
+              where: {
+                userId,
+                courseSessionId: { in: allSessionIds },
+                isCompleted: true,
+              },
+            })
+          : 0
+        const progress = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0
         return {
           id: e.courseId, title: e.course.title, type: 'mini-course' as const,
-          progress: e.progress, thumbnail: e.course.thumbnailUrl, field: e.course.field,
+          progress, thumbnail: e.course.thumbnailUrl, field: e.course.field,
           accessUntil: e.accessUntil.toISOString(),
           totalSessions,
           completedSessions,
         }
       }),
-    ]
+    ])
 
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)

@@ -89,15 +89,47 @@ courseRouter.get('/enrolled', async (req: AuthRequest, res: Response, next: Next
       orderBy: { createdAt: 'desc' },
     })
 
-    const result = enrollments.map((e) => ({
-      id:          e.course.id,
-      title:       e.course.title,
-      field:       e.course.field,
-      thumbnailUrl: e.course.thumbnailUrl,
-      progress:    Math.round(e.progress),
-      accessUntil: e.accessUntil,
-      type:        'mini-course',
-    }))
+    const result = await Promise.all(
+      enrollments.map(async (e) => {
+        const allSessions = await prisma.courseSession.findMany({
+          where: { chapter: { courseId: e.course.id } },
+          select: { id: true },
+        })
+        const totalSessions = allSessions.length
+        const completedCount = totalSessions > 0
+          ? await prisma.sessionProgress.count({
+              where: {
+                userId,
+                courseSessionId: { in: allSessions.map((s) => s.id) },
+                isCompleted: true,
+              },
+            })
+          : 0
+
+        const calculatedProgress = totalSessions > 0
+          ? Math.round((completedCount / totalSessions) * 100)
+          : 0
+
+        if (e.progress !== calculatedProgress) {
+          await prisma.courseEnrollment.update({
+            where: { userId_courseId: { userId, courseId: e.course.id } },
+            data: { progress: calculatedProgress },
+          }).catch(() => {})
+        }
+
+        return {
+          id:           e.course.id,
+          title:        e.course.title,
+          field:        e.course.field,
+          thumbnailUrl: e.course.thumbnailUrl,
+          progress:     calculatedProgress,
+          totalSessions,
+          completedSessions: completedCount,
+          accessUntil:  e.accessUntil,
+          type:         'mini-course',
+        }
+      })
+    )
     res.json({ success: true, data: result })
   } catch (err) { next(err) }
 })
@@ -380,7 +412,7 @@ courseRouter.post('/:id/sessions/:sessionId/complete', async (req: AuthRequest, 
     const completedCount = await prisma.sessionProgress.count({
       where: { userId, courseSessionId: { in: allCourseSessions.map((s) => s.id) }, isCompleted: true },
     })
-    const progress = allCourseSessions.length > 0 ? Math.round((completedCount / allCourseSessions.length) * 100) : 100
+    const progress = allCourseSessions.length > 0 ? Math.round((completedCount / allCourseSessions.length) * 100) : 0
 
     if (enrollment) {
       await prisma.courseEnrollment.update({

@@ -55,7 +55,7 @@ export async function syncBootcampSessionProgressAndCertificate(
       },
     })
 
-    const progress = Math.round((completedCount / allBootcampSessions.length) * 100)
+    const progress = allBootcampSessions.length > 0 ? Math.round((completedCount / allBootcampSessions.length) * 100) : 0
 
     await prisma.bootcampEnrollment.update({
       where: { userId_bootcampId: { userId, bootcampId } },
