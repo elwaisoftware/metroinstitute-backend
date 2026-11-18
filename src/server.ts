@@ -40,15 +40,31 @@ app.use(helmet({
   crossOriginResourcePolicy: false,
 }))
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://metroinstitute.site',
-    'https://www.metroinstitute.site',
-    'http://localhost:3000'
-  ],
+  origin: (origin, callback) => {
+    // Allow non-browser requests, mobile apps, or extension background
+    if (!origin) return callback(null, true)
+
+    const allowedOrigins = [
+      process.env.FRONTEND_URL || 'http://localhost:3000',
+      'https://metroinstitute.site',
+      'https://www.metroinstitute.site',
+      'http://localhost:3000',
+    ]
+
+    if (
+      allowedOrigins.includes(origin) ||
+      origin === 'https://meet.google.com' ||
+      origin.endsWith('.google.com') ||
+      origin.startsWith('chrome-extension://')
+    ) {
+      return callback(null, true)
+    }
+
+    return callback(null, true)
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }))
 
 // ── Rate Limiting ──────────────────────────────────────────

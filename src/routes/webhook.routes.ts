@@ -11,7 +11,19 @@ export const webhookRouter = Router()
 webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
   try {
     let body = req.body
-    if (Buffer.isBuffer(body)) body = JSON.parse(body.toString('utf8'))
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf8'))
+      } catch (err) {
+        body = {}
+      }
+    } else if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body)
+      } catch (err) {
+        body = {}
+      }
+    }
     else if (typeof body === 'string') body = JSON.parse(body)
     const {
       order_id, transaction_status, fraud_status,
@@ -203,7 +215,19 @@ webhookRouter.post('/google-meet', async (req: Request, res: Response) => {
     }
 
     let body = req.body
-    if (Buffer.isBuffer(body)) body = JSON.parse(body.toString('utf8'))
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf8'))
+      } catch (err) {
+        body = {}
+      }
+    } else if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body)
+      } catch (err) {
+        body = {}
+      }
+    }
 
     const { eventType, conferenceId, sessionId, webinarId, participants, durationMinutes, actualDurationMinutes } = body
     const actualDuration = durationMinutes || actualDurationMinutes
